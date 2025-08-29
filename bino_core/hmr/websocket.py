@@ -211,7 +211,7 @@ class HMRWebSocketServer:
             return False
         
         # Config file changes should trigger reload
-        config_files = {"package.json", "bino.config.json", "tsconfig.json"}
+        config_files = {"package.json", "tavo.config.json", "tsconfig.json"}
         if file_path.name in config_files:
             return True
         

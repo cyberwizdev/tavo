@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(
-    name="bino",
+    name="tavo",
     help="Bino full-stack framework CLI - Python backend + Rust/SWC React SSR",
     add_completion=False
 )

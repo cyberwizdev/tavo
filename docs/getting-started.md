@@ -15,13 +15,13 @@ Before getting started, ensure you have the following installed:
 ### 1. Install Bino CLI
 
 ```bash
-pip install bino-framework
+pip install tavo
 ```
 
 ### 2. Verify Installation
 
 ```bash
-bino --version
+tavo --version
 ```
 
 ## Creating Your First Project
@@ -29,7 +29,7 @@ bino --version
 ### 1. Create a New Project
 
 ```bash
-bino create my-app
+tavo create my-app
 cd my-app
 ```
 
@@ -48,13 +48,13 @@ my-app/
 ├── main.py              # ASGI application entry point
 ├── requirements.txt     # Python dependencies
 ├── package.json         # Node.js dependencies
-└── bino.config.json     # Bundler configuration
+└── tavo.config.json     # Bundler configuration
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-bino install
+tavo install
 ```
 
 This command:
@@ -67,7 +67,7 @@ This command:
 ### Start Development Server
 
 ```bash
-bino dev
+tavo dev
 ```
 
 This starts:
@@ -133,7 +133,7 @@ async def post(request: Request) -> JSONResponse:
 ### Build the Project
 
 ```bash
-bino build
+tavo build
 ```
 
 This creates optimized bundles in the `dist/` directory:
@@ -144,7 +144,7 @@ This creates optimized bundles in the `dist/` directory:
 ### Start Production Server
 
 ```bash
-bino start
+tavo start
 ```
 
 Starts the production server with:
@@ -156,7 +156,7 @@ Starts the production server with:
 
 ### Bundler Configuration
 
-Customize the build process in `bino.config.json`:
+Customize the build process in `tavo.config.json`:
 
 ```json
 {
@@ -222,26 +222,26 @@ async def get(request: Request):
 
 ## Getting Help
 
-- **Documentation**: [https://bino-framework.dev/docs](https://bino-framework.dev/docs)
-- **GitHub Issues**: [https://github.com/bino-framework/bino](https://github.com/bino-framework/bino)
-- **Discord Community**: [https://discord.gg/bino](https://discord.gg/bino)
+- **Documentation**: [https://tavo-framework.dev/docs](https://tavo-framework.dev/docs)
+- **GitHub Issues**: [https://github.com/tavo-framework/tavo](https://github.com/tavo-framework/tavo)
+- **Discord Community**: [https://discord.gg/tavo](https://discord.gg/tavo)
 
 ## Common Commands Reference
 
 ```bash
 # Project management
-bino create <project-name>    # Create new project
-bino install                  # Install dependencies
+tavo create <project-name>    # Create new project
+tavo install                  # Install dependencies
 
 # Development
-bino dev                      # Start development server
-bino dev --port 8000         # Start on custom port
+tavo dev                      # Start development server
+tavo dev --port 8000         # Start on custom port
 
 # Production
-bino build                    # Build for production
-bino build --output build    # Custom output directory
-bino start                    # Start production server
-bino start --workers 4       # Start with multiple workers
+tavo build                    # Build for production
+tavo build --output build    # Custom output directory
+tavo start                    # Start production server
+tavo start --workers 4       # Start with multiple workers
 ```
 
 Welcome to Bino! 🚀

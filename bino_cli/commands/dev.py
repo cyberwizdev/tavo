@@ -90,7 +90,7 @@ class DevServer:
         """Ensure Node.js dependencies are installed."""
         project_dir = Path.cwd()
         if not ensure_node_modules(project_dir):
-            logger.warning("Node modules not found, run 'bino install' first")
+            logger.warning("Node modules not found, run 'tavo install' first")
     
     async def _start_hmr_server(self) -> None:
         """Start HMR WebSocket server."""

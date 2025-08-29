@@ -171,7 +171,7 @@ impl Default for BundlerConfig {
 impl BundlerConfig {
     /// Load configuration from file or use defaults
     pub fn load(project_dir: &Path) -> Result<Self> {
-        let config_file = project_dir.join("bino.config.json");
+        let config_file = project_dir.join("tavo.config.json");
         
         if config_file.exists() {
             let content = std::fs::read_to_string(&config_file)
@@ -190,7 +190,7 @@ impl BundlerConfig {
     
     /// Save configuration to file
     pub fn save(&self, project_dir: &Path) -> Result<()> {
-        let config_file = project_dir.join("bino.config.json");
+        let config_file = project_dir.join("tavo.config.json");
         let content = serde_json::to_string_pretty(self)?;
         
         std::fs::write(&config_file, content)

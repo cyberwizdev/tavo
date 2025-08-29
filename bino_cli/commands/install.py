@@ -1,7 +1,7 @@
 """
 Bino Install Command
 
-Implementation of `bino install` — run pip install then npm install; handle virtualenv and cross-platform concerns.
+Implementation of `tavo install` — run pip install then npm install; handle virtualenv and cross-platform concerns.
 """
 
 import subprocess

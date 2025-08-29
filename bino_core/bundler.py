@@ -220,7 +220,7 @@ def get_bundler_config(project_dir: Path) -> Dict[str, Any]:
     Returns:
         Bundler configuration
     """
-    config_file = project_dir / "bino.config.json"
+    config_file = project_dir / "tavo.config.json"
     if config_file.exists():
         with config_file.open() as f:
             return json.load(f)

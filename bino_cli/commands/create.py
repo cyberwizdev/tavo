@@ -1,7 +1,7 @@
 """
 Bino Create Command
 
-Implementation of `bino create <dir>` — scaffold templates into target dir with token replacement.
+Implementation of `tavo create <dir>` — scaffold templates into target dir with token replacement.
 """
 
 import shutil

@@ -67,7 +67,7 @@ export default function Counter() {
 
 ### HMR Settings
 
-Configure HMR behavior in `bino.config.json`:
+Configure HMR behavior in `tavo.config.json`:
 
 ```json
 {
@@ -90,13 +90,13 @@ Control HMR with environment variables:
 
 ```bash
 # Disable HMR completely
-BINO_HMR_ENABLED=false bino dev
+BINO_HMR_ENABLED=false tavo dev
 
 # Custom HMR port
-BINO_HMR_PORT=4001 bino dev
+BINO_HMR_PORT=4001 tavo dev
 
 # Verbose HMR logging
-BINO_HMR_DEBUG=true bino dev
+BINO_HMR_DEBUG=true tavo dev
 ```
 
 ## Debugging HMR Issues
@@ -118,7 +118,7 @@ WebSocket connection to 'ws://localhost:3001/' failed
 1. **Check HMR server is running**:
    ```bash
    # HMR server should start with dev server
-   bino dev --verbose
+   tavo dev --verbose
    # Look for: "HMR WebSocket server started on port 3001"
    ```
 
@@ -128,7 +128,7 @@ WebSocket connection to 'ws://localhost:3001/' failed
    lsof -i :3001
    
    # Use different port if needed
-   bino dev --hmr-port 4001
+   tavo dev --hmr-port 4001
    ```
 
 3. **Firewall/Network issues**:
@@ -167,7 +167,7 @@ If HMR is slow or causing performance problems:
 
 1. **Reduce watched files**:
    ```json
-   // bino.config.json
+   // tavo.config.json
    {
      "dev": {
        "watch_ignore": [
@@ -244,7 +244,7 @@ The HMR error overlay shows compilation and runtime errors:
 
 ```css
 /* Customize error overlay */
-.bino-error-overlay {
+.tavo-error-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -352,7 +352,7 @@ Understanding when HMR triggers vs full reload:
 | `.css` | Style change | Hot update |
 | `.py` | API route | Server restart |
 | `package.json` | Dependency | Full reload |
-| `bino.config.json` | Config | Build restart |
+| `tavo.config.json` | Config | Build restart |
 
 ## Performance Impact
 
@@ -366,10 +366,10 @@ Monitor performance with:
 
 ```bash
 # Check HMR server memory usage
-ps aux | grep bino
+ps aux | grep tavo
 
 # Monitor file watcher performance
-bino dev --verbose --hmr-debug
+tavo dev --verbose --hmr-debug
 ```
 
 For optimal performance:

@@ -64,7 +64,7 @@ blog/
 ├── main.py                      # ASGI application
 ├── requirements.txt             # Python dependencies
 ├── package.json                 # Node.js dependencies
-└── bino.config.json            # Bundler configuration
+└── tavo.config.json            # Bundler configuration
 ```
 
 ## Getting Started
@@ -73,7 +73,7 @@ blog/
 
 ```bash
 # Create from blog template
-bino create my-blog --template blog
+tavo create my-blog --template blog
 cd my-blog
 ```
 
@@ -81,7 +81,7 @@ cd my-blog
 
 ```bash
 # Install Python and Node.js dependencies
-bino install
+tavo install
 ```
 
 ### 3. Set Up Database
@@ -99,7 +99,7 @@ asyncio.run(runner.apply_migrations())
 ### 4. Start Development Server
 
 ```bash
-bino dev
+tavo dev
 ```
 
 Visit http://localhost:3000 to see your blog!
@@ -350,14 +350,14 @@ const theme = {
 ### Build for Production
 
 ```bash
-bino build
+tavo build
 ```
 
 ### Deploy to Production
 
 ```bash
 # Start production server
-bino start --workers 4
+tavo start --workers 4
 
 # Or use Docker
 docker build -t my-blog .

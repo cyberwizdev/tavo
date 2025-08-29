@@ -131,7 +131,7 @@ pub fn init_project(project_dir: &PathBuf) -> Result<()> {
     
     // Create basic configuration
     let config = BundlerConfig::default();
-    let config_file = project_dir.join("bino.config.json");
+    let config_file = project_dir.join("tavo.config.json");
     let config_json = serde_json::to_string_pretty(&config)?;
     std::fs::write(&config_file, config_json)?;
     
@@ -176,7 +176,7 @@ mod tests {
         // Verify directories were created
         assert!(project_path.join("app").exists());
         assert!(project_path.join("api").exists());
-        assert!(project_path.join("bino.config.json").exists());
+        assert!(project_path.join("tavo.config.json").exists());
     }
     
     #[test]

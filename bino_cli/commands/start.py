@@ -174,7 +174,7 @@ def check_production_requirements() -> bool:
     # Check for build directory
     build_dir = project_dir / "dist"
     if not build_dir.exists():
-        logger.error("Build directory not found - run 'bino build' first")
+        logger.error("Build directory not found - run 'tavo build' first")
         return False
     
     # Check for uvicorn
@@ -182,7 +182,7 @@ def check_production_requirements() -> bool:
         subprocess.run([sys.executable, "-m", "uvicorn", "--version"], 
                       capture_output=True, check=True)
     except subprocess.CalledProcessError:
-        logger.error("uvicorn not installed - run 'bino install' first")
+        logger.error("uvicorn not installed - run 'tavo install' first")
         return False
     
     return True

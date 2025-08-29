@@ -8,12 +8,12 @@ Before deploying, ensure your application is production-ready:
 
 1. **Build the application**:
    ```bash
-   bino build
+   tavo build
    ```
 
 2. **Test the production build locally**:
    ```bash
-   bino start
+   tavo start
    ```
 
 3. **Verify all dependencies are in requirements.txt**
@@ -52,7 +52,7 @@ RUN npm ci --only=production
 COPY . .
 
 # Build the application
-RUN bino build
+RUN tavo build
 
 # Expose port
 EXPOSE 8000
@@ -62,7 +62,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Start production server
-CMD ["bino", "start", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["tavo", "start", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ### Docker Compose
@@ -105,10 +105,10 @@ volumes:
 
 ```bash
 # Build image
-docker build -t my-bino-app .
+docker build -t my-tavo .
 
 # Run container
-docker run -p 8000:8000 -e SECRET_KEY=your-secret my-bino-app
+docker run -p 8000:8000 -e SECRET_KEY=your-secret my-tavo
 
 # Or use docker-compose
 docker-compose up -d
@@ -118,7 +118,7 @@ docker-compose up -d
 
 ### Service File
 
-Create `/etc/systemd/system/bino-app.service`:
+Create `/etc/systemd/system/tavo.service`:
 
 ```ini
 [Unit]
@@ -127,13 +127,13 @@ After=network.target
 
 [Service]
 Type=exec
-User=bino
-Group=bino
-WorkingDirectory=/opt/bino-app
-Environment=PATH=/opt/bino-app/.venv/bin
-Environment=DATABASE_URL=sqlite:///opt/bino-app/app.db
+User=tavo
+Group=tavo
+WorkingDirectory=/opt/tavo
+Environment=PATH=/opt/tavo/.venv/bin
+Environment=DATABASE_URL=sqlite:///opt/tavo/app.db
 Environment=SECRET_KEY=your-production-secret
-ExecStart=/opt/bino-app/.venv/bin/python -m bino start --host 0.0.0.0 --port 8000
+ExecStart=/opt/tavo/.venv/bin/python -m tavo start --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
 
@@ -142,7 +142,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/bino-app
+ReadWritePaths=/opt/tavo
 
 [Install]
 WantedBy=multi-user.target
@@ -152,23 +152,23 @@ WantedBy=multi-user.target
 
 ```bash
 # Create user
-sudo useradd --system --shell /bin/false bino
+sudo useradd --system --shell /bin/false tavo
 
 # Deploy application
-sudo mkdir -p /opt/bino-app
-sudo cp -r . /opt/bino-app/
-sudo chown -R bino:bino /opt/bino-app
+sudo mkdir -p /opt/tavo
+sudo cp -r . /opt/tavo/
+sudo chown -R tavo:tavo /opt/tavo
 
 # Install dependencies and build
-cd /opt/bino-app
-sudo -u bino python -m venv .venv
-sudo -u bino .venv/bin/pip install -r requirements.txt
-sudo -u bino bino build
+cd /opt/tavo
+sudo -u tavo python -m venv .venv
+sudo -u tavo .venv/bin/pip install -r requirements.txt
+sudo -u tavo tavo build
 
 # Enable and start service
-sudo systemctl enable bino-app
-sudo systemctl start bino-app
-sudo systemctl status bino-app
+sudo systemctl enable tavo
+sudo systemctl start tavo
+sudo systemctl status tavo
 ```
 
 ## Cloud Platform Deployment
@@ -177,7 +177,7 @@ sudo systemctl status bino-app
 
 1. **Create `Procfile`**:
    ```
-   web: bino start --host 0.0.0.0 --port $PORT
+   web: tavo start --host 0.0.0.0 --port $PORT
    ```
 
 2. **Create `runtime.txt`**:
@@ -187,7 +187,7 @@ sudo systemctl status bino-app
 
 3. **Deploy**:
    ```bash
-   heroku create my-bino-app
+   heroku create my-tavo
    heroku config:set SECRET_KEY=your-secret
    git push heroku main
    ```
@@ -200,7 +200,7 @@ sudo systemctl status bino-app
    builder = "nixpacks"
    
    [deploy]
-   startCommand = "bino start --host 0.0.0.0 --port $PORT"
+   startCommand = "tavo start --host 0.0.0.0 --port $PORT"
    
    [env]
    NODE_VERSION = "18"
@@ -219,14 +219,14 @@ sudo systemctl status bino-app
 Create `.do/app.yaml`:
 
 ```yaml
-name: bino-app
+name: tavo
 services:
 - name: web
   source_dir: /
   github:
     repo: your-username/your-repo
     branch: main
-  run_command: bino start --host 0.0.0.0 --port 8080
+  run_command: tavo start --host 0.0.0.0 --port 8080
   environment_slug: python
   instance_count: 1
   instance_size_slug: basic-xxs
@@ -298,7 +298,7 @@ TIMEOUT=30
 ### Production Build Optimization
 
 ```json
-// bino.config.json
+// tavo.config.json
 {
   "swc": {
     "target": "es2020",
@@ -316,7 +316,7 @@ TIMEOUT=30
 
 ```bash
 # Start with multiple workers
-bino start --workers 4 --host 0.0.0.0 --port 8000
+tavo start --workers 4 --host 0.0.0.0 --port 8000
 
 # With custom configuration
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
@@ -413,9 +413,9 @@ For production monitoring, consider:
 
 2. **Multiple Workers**:
    ```bash
-   bino start --workers 4 --host 127.0.0.1 --port 8000
-   bino start --workers 4 --host 127.0.0.1 --port 8001
-   bino start --workers 4 --host 127.0.0.1 --port 8002
+   tavo start --workers 4 --host 127.0.0.1 --port 8000
+   tavo start --workers 4 --host 127.0.0.1 --port 8001
+   tavo start --workers 4 --host 127.0.0.1 --port 8002
    ```
 
 ### Database Scaling
@@ -435,8 +435,8 @@ For production monitoring, consider:
    
    # Clear cache and rebuild
    rm -rf node_modules dist
-   bino install
-   bino build
+   tavo install
+   tavo build
    ```
 
 2. **Database Connection Issues**:
@@ -451,7 +451,7 @@ For production monitoring, consider:
    ps aux | grep python
    
    # Adjust worker count
-   bino start --workers 2  # Reduce workers if memory constrained
+   tavo start --workers 2  # Reduce workers if memory constrained
    ```
 
 ### Logs and Debugging
@@ -461,7 +461,7 @@ For production monitoring, consider:
 tail -f logs/app.log
 
 # Check systemd service logs
-sudo journalctl -u bino-app -f
+sudo journalctl -u tavo -f
 
 # Docker logs
 docker logs -f container-name
