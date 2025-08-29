@@ -14,7 +14,7 @@ import importlib.resources as resources
 logger = logging.getLogger(__name__)
 
 
-def create_project(target_dir: Path, template: Optional[str] = "default") -> None:
+def create_project(target_dir: Path, template: str = "default") -> None:
     """
     Create a new Tavo project from template.
     
@@ -33,7 +33,7 @@ def create_project(target_dir: Path, template: Optional[str] = "default") -> Non
         raise FileExistsError(f"Directory {target_dir} already exists and is not empty")
     
     # Get template directory
-    template_dir = _get_template_dir()
+    template_dir = _get_template_dir(template)
     if not template_dir.exists():
         raise FileNotFoundError(f"Template '{template}' not found")
     
@@ -50,12 +50,22 @@ def create_project(target_dir: Path, template: Optional[str] = "default") -> Non
     logger.info(f"Created project '{project_name}' in {target_dir}")
 
 
-def _get_template_dir() -> Path:
-    """Get the template directory path (inside the installed package)."""
-    # assumes templates/ is included in package_data
-    templates = resources.files("tavo") / "templates"
-    # as_file ensures Traversable becomes a real filesystem Path
-    with resources.as_file(templates) as template_dir:
+def _get_template_dir(template_name: str = "default") -> Path:
+    """
+    Get the specific template directory path.
+    
+    Args:
+        template_name: Name of the template to use
+        
+    Returns:
+        Path to the template directory
+    """
+    # Get the templates directory from the package
+    templates_root = resources.files("tavo") / "templates"
+    
+    # Use as_file to get a real filesystem path
+    with resources.as_file(templates_root) as templates_path:
+        template_dir = templates_path / template_name
         return template_dir
 
 
@@ -126,12 +136,27 @@ def get_available_templates() -> list[str]:
         >>> "default" in templates
         True
     """
-    template_dir = _get_template_dir().parent
-    if not template_dir.exists():
+    try:
+        templates_root = resources.files("tavo") / "templates"
+        with resources.as_file(templates_root) as templates_path:
+            if not templates_path.exists():
+                return ["default"]
+            
+            # Get all subdirectories in templates/
+            templates = []
+            for item in templates_path.iterdir():
+                if item.is_dir() and not item.name.startswith('.'):
+                    templates.append(item.name)
+            
+            # Ensure 'default' is always available
+            if "default" not in templates:
+                templates.append("default")
+            
+            return sorted(templates)
+    except Exception as e:
+        logger.error(f"Failed to get available templates: {e}")
         return ["default"]
-    
-    # TODO: implement template discovery from template directory
-    return ["default", "blog", "api-only"]
+
 
 if __name__ == "__main__":
     # Example usage
@@ -146,3 +171,4 @@ if __name__ == "__main__":
 # 1. test_create_project_success() - verify project creation with valid template
 # 2. test_create_project_existing_dir() - test error handling for existing directories
 # 3. test_token_replacement() - verify template tokens are replaced correctly
+# 4. test_get_available_templates() - test template discovery

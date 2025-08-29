@@ -33,7 +33,7 @@ app = typer.Typer(
 @app.command()
 def create(
     directory: str = typer.Argument(..., help="Target directory for new project"),
-    template: Optional[str] = typer.Option("default", help="Template to use")
+    template: str = typer.Option("default", help="Template to use")
 ) -> None:
     """Create a new Tavo project from template."""
     try:
