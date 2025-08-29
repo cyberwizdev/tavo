@@ -6,8 +6,8 @@ Example simple user model (dataclass) to demonstrate ORM usage.
 
 from datetime import datetime
 from typing import Optional
-from bino_core.orm import BaseModel
-from bino_core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
+from tavo_core.orm import BaseModel
+from tavo_core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
 
 
 class User(BaseModel):

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import shutil
 
-from bino_core.bundler import build_production
+from tavo_core.bundler import build_production
 
 logger = logging.getLogger(__name__)
 

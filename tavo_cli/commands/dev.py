@@ -15,9 +15,9 @@ import threading
 import time
 
 from ..utils.npm import ensure_node_modules
-from bino_core.hmr.websocket import HMRWebSocketServer
-from bino_core.hmr.watcher import FileWatcher
-from bino_core.bundler import start_watch_mode
+from tavo_core.hmr.websocket import HMRWebSocketServer
+from tavo_core.hmr.watcher import FileWatcher
+from tavo_core.bundler import start_watch_mode
 
 logger = logging.getLogger(__name__)
 
