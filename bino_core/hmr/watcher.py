@@ -7,7 +7,7 @@ File watcher (watchfiles/watchdog) that triggers bundler rebuilds and HMR pushes
 import asyncio
 import logging
 from pathlib import Path
-from typing import Set, Optional, Callable, Any, List
+from typing import Set, Optional, Dict, Any, List
 import time
 from dataclasses import dataclass
 
@@ -225,7 +225,7 @@ class FileWatcher:
                 "timestamp": time.time()
             }
             
-            await self.hmr_server.broadcast(update_data)
+            await self.hmr_server.broadcast(update_data) # type: ignore
             logger.debug("HMR update sent")
             
         except Exception as e:

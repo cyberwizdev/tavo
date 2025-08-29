@@ -9,8 +9,8 @@ import json
 import logging
 from typing import Set, Dict, Any, Optional
 import websockets
-from websockets.server import WebSocketServerProtocol
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ class HMRWebSocketServer:
     def __init__(self, host: str = "localhost", port: int = 3001):
         self.host = host
         self.port = port
-        self.clients: Set[WebSocketServerProtocol] = set()
-        self.server: Optional[websockets.WebSocketServer] = None
+        self.clients: Set[websockets.ServerConnection] = set()
+        self.server: Optional[websockets.Server] = None
         self._running = False
     
     async def start(self) -> None:
@@ -35,7 +35,7 @@ class HMRWebSocketServer:
         
         try:
             self.server = await websockets.serve(
-                self._handle_client,
+                self._handle_client, # type: ignore
                 self.host,
                 self.port,
                 ping_interval=20,
@@ -71,7 +71,7 @@ class HMRWebSocketServer:
         
         logger.info("HMR server stopped")
     
-    async def _handle_client(self, websocket: WebSocketServerProtocol, path: str) -> None:
+    async def _handle_client(self, websocket: websockets.ServerConnection, path: str) -> None:
         """
         Handle new WebSocket client connection.
         
@@ -94,7 +94,7 @@ class HMRWebSocketServer:
             
             # Keep connection alive and handle messages
             async for message in websocket:
-                await self._handle_client_message(websocket, message)
+                await self._handle_client_message(websocket, message) # type: ignore
                 
         except websockets.exceptions.ConnectionClosed:
             logger.debug(f"HMR client disconnected: {client_addr}")
@@ -103,7 +103,7 @@ class HMRWebSocketServer:
         finally:
             self.clients.discard(websocket)
     
-    async def _handle_client_message(self, websocket: WebSocketServerProtocol, message: str) -> None:
+    async def _handle_client_message(self, websocket: websockets.ServerConnection, message: str) -> None:
         """
         Handle message from HMR client.
         
@@ -125,7 +125,7 @@ class HMRWebSocketServer:
         except json.JSONDecodeError:
             logger.warning(f"Invalid JSON from HMR client: {message}")
     
-    async def _send_to_client(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]) -> None:
+    async def _send_to_client(self, websocket: websockets.ServerConnection, data: Dict[str, Any]) -> None:
         """Send data to specific client."""
         try:
             message = json.dumps(data)

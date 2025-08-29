@@ -9,6 +9,7 @@ import logging
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 

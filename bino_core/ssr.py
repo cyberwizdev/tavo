@@ -199,7 +199,7 @@ class SSRRenderer:
             
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(
-                    process.returncode, cmd, stdout, stderr
+                    process.returncode, cmd, stdout, stderr # type: ignore
                 )
             
             return subprocess.CompletedProcess(

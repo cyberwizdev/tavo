@@ -4,4 +4,11 @@ Bino CLI Commands Package
 Contains all CLI command implementations.
 """
 
-__all__ = []
+from . import build, create, install, dev, start
+__all__ = [
+    "build",
+    "create",
+    "install",
+    "dev",
+    "start",
+]

@@ -115,10 +115,10 @@ class BaseModel(metaclass=ModelMeta):
             raise ValueError("Cannot delete unsaved instance")
         
         pk_field = self._get_primary_key_field()
-        pk_value = self._data[pk_field.name]
+        pk_value = self._data[pk_field.name] # type: ignore
         
         query = QueryBuilder(self._table_name)
-        await query.delete().where(pk_field.name, pk_value).execute()
+        await query.delete().where(pk_field.name, pk_value).execute() # type: ignore
         
         self._is_saved = False
         logger.debug(f"Deleted {self.__class__.__name__} instance")
@@ -149,7 +149,7 @@ class BaseModel(metaclass=ModelMeta):
     async def _update(self) -> None:
         """Update existing record in database."""
         pk_field = self._get_primary_key_field()
-        pk_value = self._data[pk_field.name]
+        pk_value = self._data[pk_field.name] # type: ignore
         
         # Find changed fields
         update_data = {}
@@ -165,7 +165,7 @@ class BaseModel(metaclass=ModelMeta):
         
         if update_data:
             query = QueryBuilder(self._table_name)
-            await query.update(update_data).where(pk_field.name, pk_value).execute()
+            await query.update(update_data).where(pk_field.name, pk_value).execute() # type: ignore
     
     def _get_primary_key_field(self) -> Field:
         """Get the primary key field for this model."""
@@ -268,7 +268,7 @@ class BaseModel(metaclass=ModelMeta):
     def __repr__(self) -> str:
         """String representation of model instance."""
         pk_field = self._get_primary_key_field()
-        pk_value = self._data.get(pk_field.name, "unsaved")
+        pk_value = self._data.get(pk_field.name, "unsaved") # type: ignore
         return f"<{self.__class__.__name__}({pk_field.name}={pk_value})>"
 
 

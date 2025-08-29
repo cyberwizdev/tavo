@@ -63,7 +63,7 @@ async def build_production(
         raise BundlerError(f"Build process failed: {e}")
 
 
-async def start_watch_mode(project_dir: Path, hmr_port: int = 3001) -> None:
+async def start_watch_mode(project_dir: Path, hmr_port: int = 3001) -> Any:
     """
     Start bundler in watch mode for development.
     
@@ -163,7 +163,7 @@ async def _run_bundler_command(cmd: List[str], cwd: Path) -> subprocess.Complete
         
         if process.returncode != 0:
             raise subprocess.CalledProcessError(
-                process.returncode, cmd, stdout, stderr
+                process.returncode, cmd, stdout, stderr # type: ignore
             )
         
         return subprocess.CompletedProcess(

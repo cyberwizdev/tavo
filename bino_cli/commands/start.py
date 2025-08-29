@@ -8,7 +8,7 @@ import subprocess
 import sys
 import logging
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import json
 import signal
 

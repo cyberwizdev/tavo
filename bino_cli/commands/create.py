@@ -13,7 +13,7 @@ import json
 logger = logging.getLogger(__name__)
 
 
-def create_project(target_dir: Path, template: str = "default") -> None:
+def create_project(target_dir: Path, template: Optional[str] = "default") -> None:
     """
     Create a new Bino project from template.
     
@@ -32,7 +32,7 @@ def create_project(target_dir: Path, template: str = "default") -> None:
         raise FileExistsError(f"Directory {target_dir} already exists and is not empty")
     
     # Get template directory
-    template_dir = _get_template_dir(template)
+    template_dir = _get_template_dir()
     if not template_dir.exists():
         raise FileNotFoundError(f"Template '{template}' not found")
     
@@ -49,7 +49,7 @@ def create_project(target_dir: Path, template: str = "default") -> None:
     logger.info(f"Created project '{project_name}' in {target_dir}")
 
 
-def _get_template_dir(template: str) -> Path:
+def _get_template_dir() -> Path:
     """Get the template directory path."""
     # TODO: implement template discovery from multiple sources
     current_dir = Path(__file__).parent.parent.parent
@@ -123,7 +123,7 @@ def get_available_templates() -> list[str]:
         >>> "default" in templates
         True
     """
-    template_dir = _get_template_dir("default").parent
+    template_dir = _get_template_dir().parent
     if not template_dir.exists():
         return ["default"]
     
