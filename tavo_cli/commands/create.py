@@ -130,7 +130,6 @@ def get_available_templates() -> list[str]:
     # TODO: implement template discovery from template directory
     return ["default", "blog", "api-only"]
 
-
 if __name__ == "__main__":
     # Example usage
     import tempfile

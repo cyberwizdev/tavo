@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Optional, Callable, Iterator
 import fnmatch
 import stat
+import sys
 
 logger = logging.getLogger(__name__)
 

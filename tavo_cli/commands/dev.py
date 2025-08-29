@@ -114,10 +114,11 @@ class DevServer:
     
     async def _start_bundler_watch(self) -> None:
         """Start Rust bundler in watch mode."""
+        project_dir = Path.cwd()
         # TODO: implement actual rust bundler invocation
         logger.info("Starting Rust bundler in watch mode...")
         # This would call the rust_bundler binary with watch command
-        # await start_watch_mode()
+        await start_watch_mode(project_dir)
     
     async def _start_asgi_server(self) -> None:
         """Start Python ASGI development server."""

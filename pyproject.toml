@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tavo"
-version = "0.1.0"
+version = "0.1.12"
 authors = [
   { name="Hallel", email="admin@cyberwizdev.com.ng" },
 ]
@@ -40,11 +40,11 @@ dependencies = [
 ]
 
 [project.scripts]
-tavo = "bino_cli.main:main"
+tavo = "tavo_cli.main:main"
 
 [project.urls]
-"Homepage" = "https://github.com/charis/tavo-python"
-"Bug Tracker" = "https://github.com/charis/tavo-python/issues"
+"Homepage" = "https://github.com/cyberwizdev/tavo"
+"Bug Tracker" = "https://github.com/cyberwizdev/tavo/issues"
 
 [tool.setuptools.packages.find]
-include = ["bino_cli", "bino_cli.*", "bino_core", "bino_core.*"]
+include = ["tavo_cli", "tavo_cli.*", "tavo_core", "tavo_core.*"]
