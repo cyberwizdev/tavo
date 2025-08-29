@@ -1,0 +1,11 @@
+# Include README, license, etc.
+include README.md
+include LICENSE
+
+# Include templates/static/frontend in source dist
+recursive-include tavo_core/templates *
+recursive-include tavo_core/static *
+recursive-include tavo_core/frontend *
+
+# Include the Rust crate sources (so sdist can build wheel later)
+recursive-include rust_bundler *

@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 import json
+import importlib.resources as resources
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,12 @@ def create_project(target_dir: Path, template: Optional[str] = "default") -> Non
 
 
 def _get_template_dir() -> Path:
-    """Get the template directory path."""
-    # TODO: implement template discovery from multiple sources
-    current_dir = Path(__file__).parent.parent.parent
-    return current_dir / "templates"
+    """Get the template directory path (inside the installed package)."""
+    # assumes templates/ is included in package_data
+    templates = resources.files("tavo") / "templates"
+    # as_file ensures Traversable becomes a real filesystem Path
+    with resources.as_file(templates) as template_dir:
+        return template_dir
 
 
 def _copy_template_files(source_dir: Path, target_dir: Path) -> None:

@@ -6,8 +6,8 @@ Example simple user model (dataclass) to demonstrate ORM usage.
 
 from datetime import datetime
 from typing import Optional
-from tavo_core.orm import BaseModel
-from tavo_core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
+from core.orm import BaseModel
+from core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
 
 
 class User(BaseModel):
