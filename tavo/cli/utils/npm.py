@@ -1,5 +1,5 @@
 """
-Bino NPM Utilities
+Tavo NPM Utilities
 
 Wrapper helpers that call npm/pnpm/yarn ensuring lockfile and cross-platform behavior.
 """

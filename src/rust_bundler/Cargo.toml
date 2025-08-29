@@ -2,8 +2,8 @@
 name = "rust_bundler"
 version = "0.1.0"
 edition = "2021"
-description = "SWC-based bundler for Bino framework"
-authors = ["Bino Framework Team"]
+description = "SWC-based bundler for Tavo framework"
+authors = ["Tavo Framework Team"]
 
 [[bin]]
 name = "rust_bundler"

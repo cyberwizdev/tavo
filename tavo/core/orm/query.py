@@ -1,5 +1,5 @@
 """
-Bino ORM Query Builder
+Tavo ORM Query Builder
 
 Query builder with basic select/insert/update/delete and async execution.
 """

@@ -14,7 +14,7 @@ interface LayoutProps {
 
 export default function RootLayout({ 
   children, 
-  title = "Bino App",
+  title = "Tavo App",
   description = "Full-stack React app with Python backend" 
 }: LayoutProps) {
   return (
@@ -62,7 +62,7 @@ export default function RootLayout({
           <nav className="navbar">
             <div className="nav-container">
               <a href="/" className="nav-brand">
-                Bino
+                Tavo
               </a>
               
               <div className="nav-links">
@@ -81,7 +81,7 @@ export default function RootLayout({
           {/* Footer */}
           <footer className="footer">
             <div className="footer-container">
-              <p>&copy; 2025 Bino Framework. Built with Python + Rust + React.</p>
+              <p>&copy; 2025 Tavo Framework. Built with Python + Rust + React.</p>
             </div>
           </footer>
         </div>

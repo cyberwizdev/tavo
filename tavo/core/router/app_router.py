@@ -1,5 +1,5 @@
 """
-Bino App Router
+Tavo App Router
 
 SSR route handler for /app — receives request path and delegates to SSR renderer.
 """
@@ -135,7 +135,7 @@ class AppRouter:
     def _is_development(self) -> bool:
         """Check if running in development mode."""
         import os
-        return os.getenv("BINO_ENV", "development") == "development"
+        return os.getenv("TAVO_ENV", "development") == "development"
     
     def _create_error_page(self, route: str, error_message: str) -> str:
         """
@@ -152,7 +152,7 @@ class AppRouter:
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bino SSR Error</title>
+    <title>Tavo SSR Error</title>
     <style>
         body {{ font-family: monospace; margin: 40px; background: #1a1a1a; color: #fff; }}
         .error {{ background: #2d1b1b; padding: 20px; border-radius: 8px; border-left: 4px solid #ff6b6b; }}

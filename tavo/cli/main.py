@@ -1,5 +1,5 @@
 """
-Bino CLI Main Entry Point
+Tavo CLI Main Entry Point
 
 CLI bootstrap using Typer for routing commands: create, install, dev, build, start.
 """
@@ -9,6 +9,9 @@ from typing import Optional
 from pathlib import Path
 import sys
 import logging
+import click
+import os
+
 
 from .commands import create as create_module, build as build_module, install as install_module
 from .commands import dev as dev_module, start as start_module
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="tavo",
-    help="Bino full-stack framework CLI - Python backend + Rust/SWC React SSR",
+    help="Tavo full-stack framework CLI - Python backend + Rust/SWC React SSR",
     add_completion=False
 )
 
@@ -32,11 +35,11 @@ def create(
     directory: str = typer.Argument(..., help="Target directory for new project"),
     template: Optional[str] = typer.Option("default", help="Template to use")
 ) -> None:
-    """Create a new Bino project from template."""
+    """Create a new Tavo project from template."""
     try:
         target_dir = Path(directory).resolve()
         create_module.create_project(target_dir, template)
-        typer.echo(f"✅ Created new Bino project in {target_dir}")
+        typer.echo(f"✅ Created new Tavo project in {target_dir}")
     except Exception as e:
         logger.error(f"Failed to create project: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
@@ -54,6 +57,33 @@ def install() -> None:
         typer.echo(f"❌ Error: {e}", err=True)
         raise typer.Exit(1)
 
+
+@app.command('doctor')
+def doctor():
+    """Check environment & setup"""
+    click.echo("🔍 Checking Tavo environment...")
+    
+    # Check Python version
+    python_version = sys.version_info
+    if python_version >= (3, 8):
+        click.echo(f"✅ Python {python_version.major}.{python_version.minor}.{python_version.micro}")
+    else:
+        click.echo(f"❌ Python {python_version.major}.{python_version.minor} (requires 3.8+)")
+        return
+    
+    # Check Rust/Cargo
+    if os.system("cargo --version > /dev/null 2>&1") == 0:
+        click.echo("✅ Cargo (Rust toolchain)")
+    else:
+        click.echo("⚠️  Cargo not found (Rust bundler will be limited)")
+    
+    # Check current project
+    if Path("tavo.config.json").exists():
+        click.echo("✅ Tavo project detected")
+    else:
+        click.echo("ℹ️  Not in a Tavo project directory")
+    
+    click.echo("🎉 Environment check complete!")
 
 @app.command()
 def dev(

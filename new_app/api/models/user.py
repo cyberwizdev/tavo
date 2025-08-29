@@ -6,13 +6,13 @@ Example simple user model (dataclass) to demonstrate ORM usage.
 
 from datetime import datetime
 from typing import Optional
-from core.orm import BaseModel
-from core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
+from tavo.core.orm import BaseModel
+from tavo.core.orm.fields import StringField, DateTimeField, BooleanField, IntegerField
 
 
 class User(BaseModel):
     """
-    User model demonstrating Bino ORM usage.
+    User model demonstrating Tavo ORM usage.
     
     Example:
         >>> user = User(name="John Doe", email="john@example.com")

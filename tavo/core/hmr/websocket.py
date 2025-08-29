@@ -1,5 +1,5 @@
 """
-Bino HMR WebSocket Server
+Tavo HMR WebSocket Server
 
 HMR WebSocket server implementation used only during dev to notify browsers on rebuilds.
 """

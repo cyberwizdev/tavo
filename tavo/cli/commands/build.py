@@ -1,5 +1,5 @@
 """
-Bino Build Command
+Tavo Build Command
 
 Run rust_bundler build to emit client/server bundles and manifest.
 """
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def build_project(output_dir: Path, production: bool = True) -> None:
     """
-    Build the Bino project for production deployment.
+    Build the Tavo project for production deployment.
     
     Args:
         output_dir: Directory where build output will be placed

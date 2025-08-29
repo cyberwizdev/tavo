@@ -1,5 +1,5 @@
 """
-Bino Install Command
+Tavo Install Command
 
 Implementation of `tavo install` — run pip install then npm install; handle virtualenv and cross-platform concerns.
 """
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def install_dependencies(project_dir: Optional[Path] = None) -> None:
     """
-    Install both Python and Node.js dependencies for a Bino project.
+    Install both Python and Node.js dependencies for a Tavo project.
     
     Args:
         project_dir: Project directory (defaults to current directory)
@@ -175,7 +175,7 @@ def check_system_requirements() -> bool:
         
     Example:
         >>> if check_system_requirements():
-        ...     print("System ready for Bino development")
+        ...     print("System ready for Tavo development")
     """
     required_tools = ["python", "node", "npm"]
     missing_tools = []

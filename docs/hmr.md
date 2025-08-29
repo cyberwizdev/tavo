@@ -1,10 +1,10 @@
 # Hot Module Replacement (HMR)
 
-Bino's Hot Module Replacement system provides instant feedback during development by updating your application in the browser without losing state or requiring a full page reload.
+Tavo's Hot Module Replacement system provides instant feedback during development by updating your application in the browser without losing state or requiring a full page reload.
 
 ## How HMR Works
 
-Bino's HMR system consists of three main components:
+Tavo's HMR system consists of three main components:
 
 1. **File Watcher** - Monitors your source files for changes
 2. **Rust Bundler** - Recompiles changed modules incrementally  
@@ -90,13 +90,13 @@ Control HMR with environment variables:
 
 ```bash
 # Disable HMR completely
-BINO_HMR_ENABLED=false tavo dev
+TAVO_HMR_ENABLED=false tavo dev
 
 # Custom HMR port
-BINO_HMR_PORT=4001 tavo dev
+TAVO_HMR_PORT=4001 tavo dev
 
 # Verbose HMR logging
-BINO_HMR_DEBUG=true tavo dev
+TAVO_HMR_DEBUG=true tavo dev
 ```
 
 ## Debugging HMR Issues
@@ -223,7 +223,7 @@ Access HMR functionality programmatically:
 // Client-side HMR API
 declare global {
   interface Window {
-    __BINO_HMR__: {
+    __TAVO_HMR__: {
       connect(): void;
       disconnect(): void;
       on(event: string, callback: Function): void;
@@ -233,7 +233,7 @@ declare global {
 }
 
 // Usage
-window.__BINO_HMR__.on('file-change', (data) => {
+window.__TAVO_HMR__.on('file-change', (data) => {
   console.log('File changed:', data.file);
 });
 ```

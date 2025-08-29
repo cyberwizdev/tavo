@@ -25,7 +25,7 @@ async def get(request: Request) -> JSONResponse:
         JSON response with greeting message
         
     Example:
-        GET /api/hello -> {"message": "Hello from Bino!", "timestamp": "..."}
+        GET /api/hello -> {"message": "Hello from Tavo!", "timestamp": "..."}
     """
     logger.info("Hello API endpoint called")
     
@@ -35,7 +35,7 @@ async def get(request: Request) -> JSONResponse:
     response_data = {
         "message": f"Hello, {name}!",
         "timestamp": datetime.now().isoformat(),
-        "framework": "Bino",
+        "framework": "Tavo",
         "version": "0.1.0"
     }
     
@@ -65,7 +65,7 @@ async def post(request: Request) -> JSONResponse:
                 "name": name,
                 "message": message
             },
-            "response": f"{message}, {name}! Thanks for using Bino.",
+            "response": f"{message}, {name}! Thanks for using Tavo.",
             "timestamp": datetime.now().isoformat()
         }
         

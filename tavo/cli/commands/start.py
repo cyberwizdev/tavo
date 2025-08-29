@@ -1,5 +1,5 @@
 """
-Bino Start Command
+Tavo Start Command
 
 Run production server (uvicorn or configured ASGI runner) serving prebuilt assets.
 """
@@ -90,8 +90,8 @@ def _configure_production_env(build_dir: Path) -> None:
     import os
     
     # Set build directory for the app to find assets
-    os.environ["BINO_BUILD_DIR"] = str(build_dir.absolute())
-    os.environ["BINO_ENV"] = "production"
+    os.environ["TAVO_BUILD_DIR"] = str(build_dir.absolute())
+    os.environ["TAVO_ENV"] = "production"
     
     logger.info("Production environment configured")
 

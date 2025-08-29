@@ -1,5 +1,5 @@
 """
-Bino Pip Utilities
+Tavo Pip Utilities
 
 Wrapper helpers for pip/venv/pyproject installation routines.
 """

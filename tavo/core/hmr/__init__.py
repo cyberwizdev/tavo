@@ -1,5 +1,5 @@
 """
-Bino HMR (Hot Module Replacement) Package
+Tavo HMR (Hot Module Replacement) Package
 
 Components for development-time hot reloading functionality.
 """

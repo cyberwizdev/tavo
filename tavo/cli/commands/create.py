@@ -1,5 +1,5 @@
 """
-Bino Create Command
+Tavo Create Command
 
 Implementation of `tavo create <dir>` — scaffold templates into target dir with token replacement.
 """
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def create_project(target_dir: Path, template: Optional[str] = "default") -> None:
     """
-    Create a new Bino project from template.
+    Create a new Tavo project from template.
     
     Args:
         target_dir: Directory where the project will be created

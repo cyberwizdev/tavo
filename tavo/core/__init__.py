@@ -1,7 +1,7 @@
 """
-Bino Core Runtime Package
+Tavo Core Runtime Package
 
-Core runtime components for the Bino full-stack framework.
+Core runtime components for the Tavo full-stack framework.
 Provides SSR, routing, ORM, and bundler integration.
 """
 

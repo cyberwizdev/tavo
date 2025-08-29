@@ -1,6 +1,6 @@
-# Getting Started with Bino
+# Getting Started with Tavo
 
-Bino is a full-stack framework that combines Python backends with Rust/SWC-powered React SSR for fast, modern web applications.
+Tavo is a full-stack framework that combines Python backends with Rust/SWC-powered React SSR for fast, modern web applications.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Before getting started, ensure you have the following installed:
 
 ## Installation
 
-### 1. Install Bino CLI
+### 1. Install Tavo CLI
 
 ```bash
 pip install tavo
@@ -33,7 +33,7 @@ tavo create my-app
 cd my-app
 ```
 
-This creates a new Bino project with the following structure:
+This creates a new Tavo project with the following structure:
 
 ```
 my-app/
@@ -194,12 +194,12 @@ DEBUG=true
 
 ## Database Integration
 
-Bino includes a built-in ORM for database operations:
+Tavo includes a built-in ORM for database operations:
 
 ```python
 # api/models/user.py
-from bino_core.orm import BaseModel
-from bino_core.orm.fields import StringField, DateTimeField
+from tavo_core.orm import BaseModel
+from tavo_core.orm.fields import StringField, DateTimeField
 
 class User(BaseModel):
     _table_name = "users"
@@ -244,4 +244,4 @@ tavo start                    # Start production server
 tavo start --workers 4       # Start with multiple workers
 ```
 
-Welcome to Bino! 🚀
+Welcome to Tavo! 🚀

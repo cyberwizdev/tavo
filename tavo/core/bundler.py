@@ -1,5 +1,5 @@
 """
-Bino Bundler Integration
+Tavo Bundler Integration
 
 Helpers to call the rust SWC bundler (build/watch/ssr) from Python.
 """

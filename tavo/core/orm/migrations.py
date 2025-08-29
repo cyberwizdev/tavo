@@ -1,5 +1,5 @@
 """
-Bino ORM Migrations
+Tavo ORM Migrations
 
 Simple migration runner (create, apply, rollback).
 """
@@ -236,7 +236,7 @@ class MigrationRunner:
         """Initialize the migrations tracking table."""
         # TODO: implement migrations table creation
         create_table_sql = """
-        CREATE TABLE IF NOT EXISTS bino_migrations (
+        CREATE TABLE IF NOT EXISTS tavo_migrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name VARCHAR(255) NOT NULL UNIQUE,
             checksum VARCHAR(32) NOT NULL,

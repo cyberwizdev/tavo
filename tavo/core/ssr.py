@@ -1,5 +1,5 @@
 """
-Bino SSR Implementation
+Tavo SSR Implementation
 
 SSR bridge implementation — Python ↔ rust_bundler. Provide sync/async API to render a route and return HTML.
 """
@@ -174,7 +174,7 @@ class SSRRenderer:
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Bino App</title>
+    <title>Tavo App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
@@ -248,7 +248,7 @@ class SSRRenderer:
         # Context for client-side hydration
         context_script = f"""
 <script>
-window.__BINO_CONTEXT__ = {json.dumps(context)};
+window.__TAVO_CONTEXT__ = {json.dumps(context)};
 </script>
 """
         

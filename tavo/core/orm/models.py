@@ -1,5 +1,5 @@
 """
-Bino ORM Models
+Tavo ORM Models
 
 BaseModel class, meta, and model utilities.
 """

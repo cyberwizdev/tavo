@@ -1,5 +1,5 @@
 """
-Bino CLI Commands Package
+Tavo CLI Commands Package
 
 Contains all CLI command implementations.
 """

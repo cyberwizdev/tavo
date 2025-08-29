@@ -46,7 +46,7 @@ export default function Hello({
         </h2>
         
         <p className="hello-description">
-          This is a React component rendered by the Bino framework.
+          This is a React component rendered by the Tavo framework.
         </p>
         
         {showTime && (

@@ -1,6 +1,6 @@
-# Bino Blog Example
+# Tavo Blog Example
 
-This example demonstrates a complete blog application built with the Bino framework, showcasing:
+This example demonstrates a complete blog application built with the Tavo framework, showcasing:
 
 - **Server-Side Rendering** with React components
 - **Python API** for blog post management
@@ -89,7 +89,7 @@ tavo install
 ```bash
 # Apply database migrations
 python -c "
-from bino_core.orm.migrations import MigrationRunner
+from tavo_core.orm.migrations import MigrationRunner
 import asyncio
 runner = MigrationRunner('migrations')
 asyncio.run(runner.apply_migrations())
@@ -110,8 +110,8 @@ Visit http://localhost:3000 to see your blog!
 
 ```python
 # api/models/post.py
-from bino_core.orm import BaseModel
-from bino_core.orm.fields import StringField, TextField, DateTimeField, BooleanField
+from tavo_core.orm import BaseModel
+from tavo_core.orm.fields import StringField, TextField, DateTimeField, BooleanField
 
 class Post(BaseModel):
     _table_name = "posts"
@@ -419,9 +419,9 @@ To contribute to this example:
 
 ## Learn More
 
-- [Bino Documentation](../docs/getting-started.md)
+- [Tavo Documentation](../docs/getting-started.md)
 - [API Development Guide](../docs/api-development.md)
 - [Deployment Guide](../docs/deployment.md)
 - [HMR Documentation](../docs/hmr.md)
 
-This blog example demonstrates the power of Bino's integrated development experience with instant feedback and modern web development practices.
+This blog example demonstrates the power of Tavo's integrated development experience with instant feedback and modern web development practices.

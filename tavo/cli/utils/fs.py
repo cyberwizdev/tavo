@@ -1,5 +1,5 @@
 """
-Bino Filesystem Utilities
+Tavo Filesystem Utilities
 
 Helpers for filesystem operations used by the CLI scaffolder and installer.
 """
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     ensure_directory(temp_dir)
     
     test_file = temp_dir / "test.txt"
-    test_file.write_text("Hello, Bino!")
+    test_file.write_text("Hello, Tavo!")
     
     print(f"File size: {get_file_size(test_file)} bytes")
     

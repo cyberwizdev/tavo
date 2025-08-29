@@ -1,5 +1,5 @@
 """
-Bino File Watcher
+Tavo File Watcher
 
 File watcher (watchfiles/watchdog) that triggers bundler rebuilds and HMR pushes.
 """

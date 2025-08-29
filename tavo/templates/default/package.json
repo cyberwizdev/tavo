@@ -1,0 +1,52 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "version": "0.1.0",
+  "description": "A Tavo full-stack application",
+  "type": "module",
+  "scripts": {
+    "dev": "tavo dev",
+    "build": "tavo build",
+    "start": "python -m uvicorn backend.main:app --host 0.0.0.0 --port 3000",
+    "doctor": "tavo doctor"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "tavo": "*"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.8"
+  },
+  "keywords": [
+    "tavo",
+    "fullstack",
+    "react",
+    "python",
+    "ssr",
+    "fastapi",
+    "rust",
+    "swc"
+  ],
+  "author": "",
+  "license": "MIT",
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

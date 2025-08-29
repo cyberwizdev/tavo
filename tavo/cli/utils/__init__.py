@@ -1,5 +1,5 @@
 """
-Bino CLI Utilities Package
+Tavo CLI Utilities Package
 
 Utility functions for CLI operations.
 """

@@ -1,5 +1,5 @@
 """
-Bino ORM Package
+Tavo ORM Package
 
 Built-in ORM adapter for database operations.
 """

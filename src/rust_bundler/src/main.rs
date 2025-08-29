@@ -19,7 +19,7 @@ use config::BundlerConfig;
 
 #[derive(Parser)]
 #[command(name = "rust_bundler")]
-#[command(about = "SWC-based bundler for Bino framework")]
+#[command(about = "SWC-based bundler for Tavo framework")]
 #[command(version = "0.1.0")]
 struct Cli {
     #[command(subcommand)]
@@ -117,9 +117,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Initialize a new Bino project structure
+/// Initialize a new Tavo project structure
 pub fn init_project(project_dir: &PathBuf) -> Result<()> {
-    info!("Initializing Bino project structure...");
+    info!("Initializing Tavo project structure...");
     
     // Create directories
     let dirs = ["app", "api", "static", "migrations"];

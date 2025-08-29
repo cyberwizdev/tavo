@@ -1,5 +1,5 @@
 """
-Bino Dev Command
+Tavo Dev Command
 
 Run dev server: start Python ASGI app, start rust_bundler in watch mode, start HMR websocket server.
 """
@@ -15,9 +15,9 @@ import threading
 import time
 
 from ..utils.npm import ensure_node_modules
-from core.hmr.websocket import HMRWebSocketServer
-from core.hmr.watcher import FileWatcher
-from core.bundler import start_watch_mode
+from tavo.core.hmr.websocket import HMRWebSocketServer
+from tavo.core.hmr.watcher import FileWatcher
+from tavo.core.bundler import start_watch_mode
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ def check_dev_requirements() -> bool:
     
     # Check for main.py (ASGI app)
     if not (project_dir / "main.py").exists():
-        logger.error("main.py not found - not a Bino project?")
+        logger.error("main.py not found - not a Tavo project?")
         return False
     
     # Check for app directory

@@ -95,7 +95,7 @@ impl SwcBundler {
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Bino App - {}</title>
+    <title>Tavo App - {}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
@@ -103,7 +103,7 @@ impl SwcBundler {
         <h1>Route: {}</h1>
         <p>Server-side rendered content</p>
     </div>
-    <script>window.__BINO_CONTEXT__ = {};</script>
+    <script>window.__TAVO_CONTEXT__ = {};</script>
 </body>
 </html>"#,
             route, route, context
@@ -191,7 +191,7 @@ impl SwcBundler {
 const React = require('react');
 
 function Component() {{
-    return React.createElement('div', null, 'Hello from Bino!');
+    return React.createElement('div', null, 'Hello from Tavo!');
 }}
 
 module.exports = Component;

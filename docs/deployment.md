@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide covers deploying Bino applications to various platforms including Docker, systemd, and cloud providers.
+This guide covers deploying Tavo applications to various platforms including Docker, systemd, and cloud providers.
 
 ## Prerequisites
 
@@ -79,7 +79,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/bino_app
+      - DATABASE_URL=postgresql://user:pass@db:5432/tavo_app
       - SECRET_KEY=${SECRET_KEY}
     depends_on:
       - db
@@ -89,7 +89,7 @@ services:
   db:
     image: postgres:15
     environment:
-      - POSTGRES_DB=bino_app
+      - POSTGRES_DB=tavo_app
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=pass
     volumes:
@@ -122,7 +122,7 @@ Create `/etc/systemd/system/tavo.service`:
 
 ```ini
 [Unit]
-Description=Bino Application
+Description=Tavo Application
 After=network.target
 
 [Service]
@@ -338,7 +338,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 2. **Migrations**:
    ```bash
    # Apply migrations in production
-   python -c "from bino_core.orm.migrations import MigrationRunner; import asyncio; asyncio.run(MigrationRunner('migrations').apply_migrations())"
+   python -c "from tavo_core.orm.migrations import MigrationRunner; import asyncio; asyncio.run(MigrationRunner('migrations').apply_migrations())"
    ```
 
 ## Monitoring and Logging
@@ -393,7 +393,7 @@ For production monitoring, consider:
 
 1. **Load Balancer Configuration** (Nginx):
    ```nginx
-   upstream bino_app {
+   upstream tavo_app {
        server 127.0.0.1:8000;
        server 127.0.0.1:8001;
        server 127.0.0.1:8002;
@@ -404,7 +404,7 @@ For production monitoring, consider:
        server_name your-domain.com;
        
        location / {
-           proxy_pass http://bino_app;
+           proxy_pass http://tavo_app;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
        }

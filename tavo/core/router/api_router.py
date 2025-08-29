@@ -1,5 +1,5 @@
 """
-Bino API Router
+Tavo API Router
 
 File-based router loader for /api — dynamically imports python modules and wires Starlette-compatible endpoints.
 """

@@ -25,7 +25,7 @@ export default function HomePage({ initialData }: HomePageProps) {
     setError(null);
     
     try {
-      const response = await fetch('/api/hello?name=Bino');
+      const response = await fetch('/api/hello?name=Tavo');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -50,7 +50,7 @@ export default function HomePage({ initialData }: HomePageProps) {
       <section className="hero">
         <div className="hero-content">
           <h1 className="hero-title">
-            Welcome to <span className="brand">Bino</span>
+            Welcome to <span className="brand">Tavo</span>
           </h1>
           <p className="hero-subtitle">
             Full-stack framework combining Python backends with Rust/SWC-powered React SSR
@@ -86,7 +86,7 @@ export default function HomePage({ initialData }: HomePageProps) {
           {/* Hello Component */}
           <div className="demo-card">
             <h3>Component Demo</h3>
-            <Hello name="Bino Developer" />
+            <Hello name="Tavo Developer" />
           </div>
           
           {/* API Demo */}
