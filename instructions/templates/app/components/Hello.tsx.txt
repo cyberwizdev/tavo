@@ -1,0 +1,29 @@
+Implement: templates/app/components/Hello.tsx
+
+# TASK
+Implement the file `templates/app/components/Hello.tsx` for the Bino full-stack framework.
+
+# OVERVIEW
+Small working React component to import into pages.
+
+# CONTEXT
+- Project: Bino (Python backend + Rust/SWC React SSR)
+- This file should follow Python 3.11+ idioms (async where appropriate) and be well documented.
+- Prefer small, testable functions. Provide basic error handling and logging.
+- If this file is a CLI command: do not start a blocking server — only implement the command's logic and an entrypoint function.
+- If this file calls external tools (npm, rust bundler), expose clear functions and do not execute them on import.
+
+# REQUIREMENTS
+- Add docstrings.
+- Add type annotations.
+- Use Starlette-compatible request/response for API route handlers.
+- For any filesystem paths, use pathlib.
+- Include comments where a future developer must implement real logic (e.g., `# TODO: implement real compiler invocation`).
+- Keep the file under 400 lines of code.
+- Add a short usage example at the bottom in a `if __name__ == '__main__':` block when appropriate.
+
+# TESTS
+Suggest 2-3 unit tests as comments or doctests for critical functions.
+
+# OUTPUT
+Return only the source code or file content (no extra wrapper text).
