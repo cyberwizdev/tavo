@@ -5,9 +5,9 @@ Built-in ORM adapter for database operations.
 """
 
 from .models import BaseModel, ModelMeta
-from .fields import Field, IntegerField, StringField, DateTimeField, ForeignKeyField
-from .query import QueryBuilder, Q
-from .migrations import MigrationRunner
+from .fields import Field, IntegerField, StringField, DateTimeField, ForeignKeyField, CharField, BooleanField, FloatField, TextField, DateField, TimeField, JSONField, DecimalField
+from .query import QueryBuilder, Q, execute_raw_query
+from .migrations import MigrationRunner, Migration
 
 __all__ = [
     "BaseModel",
@@ -19,5 +19,15 @@ __all__ = [
     "ForeignKeyField",
     "QueryBuilder",
     "Q",
-    "MigrationRunner"
+    "MigrationRunner",
+    "Migration",
+    "CharField",
+    "BooleanField",
+    "FloatField",
+    "TextField",
+    "DateField",
+    "TimeField",
+    "JSONField",
+    "DecimalField",
+    "execute_raw_query"
 ]

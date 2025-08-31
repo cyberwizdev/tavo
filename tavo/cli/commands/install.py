@@ -154,7 +154,8 @@ def _run_command(cmd: List[str], cwd: Path) -> None:
             cwd=cwd,
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            shell=True
         )
         if result.stdout:
             logger.debug(result.stdout)

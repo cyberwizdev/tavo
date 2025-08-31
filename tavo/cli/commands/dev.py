@@ -13,6 +13,8 @@ import signal
 import sys
 import threading
 import time
+import shutil
+import os
 
 from ..utils.npm import ensure_node_modules
 from tavo.core.hmr.websocket import HMRWebSocketServer
@@ -25,35 +27,42 @@ logger = logging.getLogger(__name__)
 class DevServer:
     """Development server coordinator that manages multiple processes."""
     
-    def __init__(self, host: str = "localhost", port: int = 3000, reload: bool = True):
+    def __init__(self, host: str = "localhost", port: int = 3000, reload: bool = True, verbose: bool = False):
         self.host = host
         self.port = port
         self.reload = reload
+        self.verbose = verbose
         self.processes: list[subprocess.Popen] = []
         self.hmr_server: Optional[HMRWebSocketServer] = None
         self.file_watcher: Optional[FileWatcher] = None
         self._shutdown_event = threading.Event()
+        self._setup_logging()
+    
+    def _setup_logging(self) -> None:
+        """Configure logging levels based on verbose mode."""
+        if self.verbose:
+            logging.getLogger("tavo").setLevel(logging.DEBUG)
+        else:
+            # Reduce noise in production mode
+            logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+            logging.getLogger("watchfiles").setLevel(logging.WARNING)
     
     async def start(self) -> None:
         """Start all development services."""
         try:
+            logger.info("Starting Tavo development server...")
+            
             # Ensure dependencies are installed
             await self._ensure_dependencies()
             
-            # Start HMR WebSocket server
+            # Start services
             await self._start_hmr_server()
-            
-            # Start file watcher
             await self._start_file_watcher()
-            
-            # Start Rust bundler in watch mode
             await self._start_bundler_watch()
-            
-            # Start Python ASGI server
             await self._start_asgi_server()
             
-            logger.info(f"🚀 Dev server running at http://{self.host}:{self.port}")
-            logger.info("Press Ctrl+C to stop")
+            # Log server info and route summary
+            await self._log_server_status()
             
             # Wait for shutdown signal
             await self._wait_for_shutdown()
@@ -65,7 +74,7 @@ class DevServer:
     
     async def stop(self) -> None:
         """Stop all development services."""
-        logger.info("Stopping development server...")
+        logger.info("Shutting down development server...")
         
         # Stop file watcher
         if self.file_watcher:
@@ -85,19 +94,23 @@ class DevServer:
                     process.kill()
         
         self._shutdown_event.set()
+        logger.info("Development server stopped")
     
     async def _ensure_dependencies(self) -> None:
         """Ensure Node.js dependencies are installed."""
         project_dir = Path.cwd()
         if not ensure_node_modules(project_dir):
-            logger.warning("Node modules not found, run 'tavo install' first")
+            if self.verbose:
+                logger.warning("Node modules not found, run 'tavo install' first")
     
     async def _start_hmr_server(self) -> None:
         """Start HMR WebSocket server."""
         hmr_port = self.port + 1
         self.hmr_server = HMRWebSocketServer(port=hmr_port)
         await self.hmr_server.start()
-        logger.info(f"HMR server started on port {hmr_port}")
+        
+        if self.verbose:
+            logger.info(f"HMR server started on port {hmr_port}")
     
     async def _start_file_watcher(self) -> None:
         """Start file watcher for HMR."""
@@ -110,40 +123,174 @@ class DevServer:
             hmr_server=self.hmr_server
         )
         await self.file_watcher.start()
-        logger.info("File watcher started")
+        
+        if self.verbose:
+            logger.info("File watcher started")
+    
+    def _check_bundler_available(self) -> bool:
+        """Check if the Rust bundler binary is available."""
+        bundler_names = ["tavo-bundler", "tavo-bundler.exe", "rust_bundler", "rust_bundler.exe"]
+        
+        # Check in PATH first
+        for name in bundler_names:
+            if shutil.which(name):
+                return True
+        
+        # Check in project directory
+        project_dir = Path.cwd()
+        for name in bundler_names:
+            bundler_path = project_dir / name
+            if bundler_path.exists() and bundler_path.is_file():
+                return True
+        
+        return False
     
     async def _start_bundler_watch(self) -> None:
-        """Start Rust bundler in watch mode."""
-        project_dir = Path.cwd()
-        # TODO: implement actual rust bundler invocation
-        logger.info("Starting Rust bundler in watch mode...")
-        # This would call the rust_bundler binary with watch command
-        await start_watch_mode(project_dir)
+        """Start Rust bundler in watch mode (optional)."""
+        if not self._check_bundler_available():
+            if self.verbose:
+                logger.warning("Rust bundler not found - running without asset bundling")
+                logger.warning("Frontend assets will be served statically")
+            return
+        
+        try:
+            project_dir = Path.cwd()
+            await start_watch_mode(project_dir)
+            
+            if self.verbose:
+                logger.info("Rust bundler watch mode started")
+        except Exception as e:
+            logger.warning(f"Failed to start Rust bundler: {e}")
+            if self.verbose:
+                logger.warning("Continuing without asset bundling...")
     
     async def _start_asgi_server(self) -> None:
         """Start Python ASGI development server."""
+        project_dir = Path.cwd()
+        main_module = "main:app"
+        
+        if (project_dir / "backend" / "main.py").exists():
+            main_module = "backend.main:app"
+        elif not (project_dir / "main.py").exists():
+            logger.error("No main.py found in project root or backend/ directory")
+            raise FileNotFoundError("ASGI application entry point not found")
+        
+        # Set environment variable to enable route logging
+        env = os.environ.copy()
+        env["TAVO_LOG_ROUTES"] = "1"
+        
         cmd = [
             sys.executable, "-m", "uvicorn",
-            "main:app",
+            main_module,
             "--host", self.host,
             "--port", str(self.port),
-            "--reload" if self.reload else "--no-reload"
+            "--log-level", "warning",  # Reduce uvicorn noise
         ]
+        
+        if self.reload:
+            cmd.append("--reload")
         
         process = subprocess.Popen(
             cmd,
-            cwd=Path.cwd(),
+            cwd=project_dir,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True
         )
         self.processes.append(process)
-        logger.info("ASGI server started")
+        
+        # Monitor ASGI server output for route information
+        threading.Thread(target=self._monitor_asgi_output, args=(process,), daemon=True).start()
+    
+    def _monitor_asgi_output(self, process: subprocess.Popen) -> None:
+        """Monitor ASGI server output and extract route information."""
+        if not process.stdout:
+            return
+        
+        routes_logged = False
+        
+        for line in iter(process.stdout.readline, ''):
+            if not line:
+                break
+            
+            line = line.strip()
+            
+            # Look for application startup complete
+            if "Application startup complete" in line and not routes_logged:
+                routes_logged = True
+                # Give the app a moment to finish startup
+                time.sleep(0.5)
+                self._fetch_and_log_routes()
+            
+            # Log important messages
+            if any(keyword in line.lower() for keyword in ["error", "warning", "started", "listening"]):
+                if self.verbose or "error" in line.lower():
+                    logger.info(f"ASGI: {line}")
+    
+    def _fetch_and_log_routes(self) -> None:
+        """Fetch route information from the running server and log it."""
+        try:
+            import requests
+            response = requests.get(f"http://{self.host}:{self.port}/health", timeout=2)
+            
+            if response.status_code == 200:
+                data = response.json()
+                api_count = data.get("routes", {}).get("api", 0)
+                page_count = data.get("routes", {}).get("pages", 0)
+                
+                logger.info(f"Server ready at http://{self.host}:{self.port}")
+                logger.info(f"Routes: {api_count} API endpoints, {page_count} pages")
+                
+                # Try to get detailed route info if available
+                self._log_detailed_routes()
+                
+        except Exception as e:
+            if self.verbose:
+                logger.debug(f"Could not fetch route info: {e}")
+    
+    def _log_detailed_routes(self) -> None:
+        """Log detailed route information."""
+        try:
+            import requests
+            
+            # Try to get route details (this would need to be implemented in main.py)
+            response = requests.get(f"http://{self.host}:{self.port}/_routes", timeout=1)
+            
+            if response.status_code == 200:
+                routes = response.json()
+                
+                logger.info("Registered routes:")
+                for route in routes.get("api", []):
+                    methods = ", ".join(route.get("methods", ["GET"]))
+                    logger.info(f"  API  {route['path']} [{methods}]")
+                
+                for route in routes.get("pages", []):
+                    logger.info(f"  PAGE {route['path']}")
+                    
+        except Exception:
+            # Silently fail - detailed routes are optional
+            pass
+    
+    async def _log_server_status(self) -> None:
+        """Log server status and configuration."""
+        bundler_status = check_bundler_status()
+        
+        logger.info(f"Development server starting on http://{self.host}:{self.port}")
+        
+        if bundler_status["available"]:
+            logger.info(f"Asset bundling: enabled ({bundler_status['type']})")
+        else:
+            logger.info("Asset bundling: disabled (bundler not found)")
+        
+        logger.info(f"Hot reload: {'enabled' if self.reload else 'disabled'}")
+        
+        if not self.verbose:
+            logger.info("Use --verbose for detailed logging")
     
     async def _wait_for_shutdown(self) -> None:
         """Wait for shutdown signal."""
         def signal_handler(signum, frame):
-            logger.info("Received shutdown signal")
             asyncio.create_task(self.stop())
         
         signal.signal(signal.SIGINT, signal_handler)
@@ -154,7 +301,12 @@ class DevServer:
             await asyncio.sleep(0.1)
 
 
-def start_dev_server(host: str = "localhost", port: int = 3000, reload: bool = True) -> None:
+def start_dev_server(
+    host: str = "localhost", 
+    port: int = 3000, 
+    reload: bool = True, 
+    verbose: bool = False
+) -> None:
     """
     Start the development server with all services.
     
@@ -162,13 +314,14 @@ def start_dev_server(host: str = "localhost", port: int = 3000, reload: bool = T
         host: Host to bind to
         port: Port to bind to
         reload: Enable auto-reload and HMR
+        verbose: Enable verbose logging
     """
-    dev_server = DevServer(host, port, reload)
+    dev_server = DevServer(host, port, reload, verbose)
     
     try:
         asyncio.run(dev_server.start())
     except KeyboardInterrupt:
-        logger.info("Development server stopped by user")
+        logger.info("Development server stopped")
     except Exception as e:
         logger.error(f"Development server error: {e}")
         raise
@@ -183,8 +336,13 @@ def check_dev_requirements() -> bool:
     """
     project_dir = Path.cwd()
     
-    # Check for main.py (ASGI app)
-    if not (project_dir / "main.py").exists():
+    # Check for main.py (ASGI app) in root or backend/
+    main_py_locations = [
+        project_dir / "main.py",
+        project_dir / "backend" / "main.py"
+    ]
+    
+    if not any(loc.exists() for loc in main_py_locations):
         logger.error("main.py not found - not a Tavo project?")
         return False
     
@@ -193,20 +351,66 @@ def check_dev_requirements() -> bool:
         logger.error("app/ directory not found")
         return False
     
-    # TODO: Check for rust bundler binary
-    
     return True
+
+
+def check_bundler_status() -> dict:
+    """
+    Check bundler availability and return status info.
+    
+    Returns:
+        Dictionary with bundler status information
+    """
+    bundler_names = ["tavo-bundler", "tavo-bundler.exe", "rust_bundler", "rust_bundler.exe"]
+    
+    # Check in PATH
+    for name in bundler_names:
+        if shutil.which(name):
+            return {
+                "available": True,
+                "location": shutil.which(name),
+                "type": "system"
+            }
+    
+    # Check in project directory
+    project_dir = Path.cwd()
+    for name in bundler_names:
+        bundler_path = project_dir / name
+        if bundler_path.exists() and bundler_path.is_file():
+            return {
+                "available": True,
+                "location": str(bundler_path),
+                "type": "local"
+            }
+    
+    return {
+        "available": False,
+        "location": None,
+        "type": None
+    }
 
 
 if __name__ == "__main__":
     # Example usage
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+    
     if check_dev_requirements():
-        print("Starting development server...")
-        start_dev_server()
+        bundler_status = check_bundler_status()
+        
+        if verbose:
+            if bundler_status["available"]:
+                print(f"Rust bundler found: {bundler_status['location']}")
+            else:
+                print("Rust bundler not found - will run without asset bundling")
+        
+        start_dev_server(verbose=verbose)
     else:
-        print("❌ Development requirements not met")
+        logger.error("Development requirements not met")
 
 # Unit tests as comments:
 # 1. test_dev_server_startup() - verify all services start correctly
 # 2. test_dev_server_shutdown() - test graceful shutdown of all processes
 # 3. test_check_dev_requirements() - verify project structure validation
+# 4. test_bundler_detection() - test bundler binary detection
+# 5. test_fallback_mode() - test running without bundler
+# 6. test_verbose_mode() - test verbose vs quiet logging modes

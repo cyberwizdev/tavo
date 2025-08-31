@@ -89,11 +89,12 @@ def doctor():
 def dev(
     host: str = typer.Option("localhost", help="Host to bind to"),
     port: int = typer.Option(3000, help="Port to bind to"),
-    reload: bool = typer.Option(True, help="Enable auto-reload")
+    reload: bool = typer.Option(True, help="Enable auto-reload"),
+    verbose: bool = typer.Option(False, help="Enable verbose logging")
 ) -> None:
     """Start development server with HMR."""
     try:
-        dev_module.start_dev_server(host, port, reload)
+        dev_module.start_dev_server(host, port, reload, verbose)
     except KeyboardInterrupt:
         typer.echo("\n👋 Development server stopped")
     except Exception as e:

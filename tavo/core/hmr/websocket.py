@@ -71,7 +71,7 @@ class HMRWebSocketServer:
         
         logger.info("HMR server stopped")
     
-    async def _handle_client(self, websocket: websockets.ServerConnection, path: str) -> None:
+    async def _handle_client(self, websocket: websockets.ServerConnection) -> None:
         """
         Handle new WebSocket client connection.
         

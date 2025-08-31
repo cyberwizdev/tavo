@@ -105,19 +105,19 @@ packages = [
     "tavo.core.hmr",
     "tavo.core.orm", 
     "tavo.core.router",
-    "tavo.templates",
-    "tavo.templates.api",
-    "tavo.templates.api.models",
-    "tavo.templates.api.routes", 
-    "tavo.templates.app",
-    "tavo.templates.app.components"
+    "tavo.templates.default",
+    "tavo.templates.default.api",
+    "tavo.templates.default.api.models",
+    "tavo.templates.default.api.routes", 
+    "tavo.templates.default.app",
+    "tavo.templates.default.app.components"
 ]
 
 # Include template files
 [tool.setuptools.package-data]
-"tavo.templates" = ["**/*"]
-"tavo.templates.api" = ["**/*"]  
-"tavo.templates.app" = ["**/*"]
+"tavo.templates.default" = ["**/*"]
+"tavo.templates.default.api" = ["**/*"]  
+"tavo.templates.default.app" = ["**/*"]
 
 # Make sure to include non-Python files
 [tool.setuptools.package-dir]
