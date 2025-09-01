@@ -1,14 +1,11 @@
 use anyhow::Result;
 use std::path::PathBuf;
-use swc_core::common::{SourceMap, GLOBALS, Mark};
+use swc_core::common::{SourceMap, GLOBALS};
 use swc_core::common::sync::Lrc;
 use swc_core::ecma::ast::EsVersion;
 use swc_core::ecma::codegen::{text_writer::JsWriter, Emitter};
 use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
-use swc_core::ecma::transforms::react::{react, Options as ReactOptions};
-use swc_core::ecma::transforms::typescript::strip;
-use swc_core::ecma::visit::FoldWith;
 
 use crate::error::SSRError;
 
