@@ -225,7 +225,7 @@ class FileBasedRouter:
                             "query_params": dict(request.query_params),
                             "route_params": request.path_params,
                         }
-                        html_content = await self.renderer.render_route(path, ssr_context)
+                        html_content = await self.renderer.render_route(path, ssr_context) # type: ignore
                         return Response(content=html_content, media_type="text/html")
                     except Exception as e:
                         self.logger.error(f"SSR error for {path}: {e}")
@@ -261,7 +261,7 @@ class FileBasedRouter:
         for route in self.routes:
             match, params = route.matches({"type": "http", "path": path, "method": "GET"})
             if match == Match.FULL:
-                return RouteMatch(route.path, params)
+                return RouteMatch(route.path, params) # type: ignore
         return None
     
     def get_route_info(self) -> List[Dict[str, Any]]:
