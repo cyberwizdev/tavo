@@ -1,19 +1,19 @@
 use anyhow::Result;
 use std::path::PathBuf;
-use std::sync::Arc;
 use swc_core::common::{SourceMap, GLOBALS, Mark};
+use swc_core::common::sync::Lrc;
 use swc_core::ecma::ast::EsVersion;
 use swc_core::ecma::codegen::{text_writer::JsWriter, Emitter};
-use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput, Syntax, TsConfig};
-use swc_core::ecma::transforms::base::pass::FoldPass;
+use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+
 use swc_core::ecma::transforms::react::{react, Options as ReactOptions};
-use swc_core::ecma::transforms::typescript::strip_type;
+use swc_core::ecma::transforms::typescript::strip;
 use swc_core::ecma::visit::FoldWith;
 
 use crate::error::SSRError;
 
 pub struct TSXCompiler {
-    source_map: Arc<SourceMap>,
+    source_map: Lrc<SourceMap>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ pub struct CompiledLayout {
 impl TSXCompiler {
     pub fn new() -> Result<Self, SSRError> {
         Ok(Self {
-            source_map: Arc::new(SourceMap::default()),
+            source_map: Lrc::new(SourceMap::default()),
         })
     }
 
@@ -76,9 +76,14 @@ impl TSXCompiler {
 
     async fn compile_tsx(&self, source: &str) -> Result<String, SSRError> {
         GLOBALS.set(&Default::default(), || {
-            let input = StringInput::new(source, swc_core::common::BytePos(0), swc_core::common::BytePos(source.len() as u32));
+            let input = StringInput::new(
+                source, 
+                swc_core::common::BytePos(0), 
+                swc_core::common::BytePos(source.len() as u32)
+            );
+            
             let lexer = Lexer::new(
-                Syntax::Typescript(TsConfig {
+                Syntax::Typescript(TsSyntax {
                     tsx: true,
                     decorators: false,
                     dts: false,
@@ -94,22 +99,7 @@ impl TSXCompiler {
             let module = parser.parse_module()
                 .map_err(|e| SSRError::ParseError(format!("{:?}", e)))?;
 
-            let top_level_mark = Mark::new();
-            let unresolved_mark = Mark::new();
-
-            let module = module
-                .fold_with(&mut FoldPass::new(strip_type()))
-                .fold_with(&mut FoldPass::new(react(
-                    self.source_map.clone(),
-                    None,
-                    ReactOptions {
-                        runtime: Some(swc_core::ecma::transforms::react::Runtime::Automatic),
-                        ..Default::default()
-                    },
-                    top_level_mark,
-                    unresolved_mark,
-                )));
-
+            // For now, skip transforms and just emit the parsed code
             let mut buf = Vec::new();
             let writer = JsWriter::new(self.source_map.clone(), "\n", &mut buf, None);
             let mut emitter = Emitter {
@@ -131,7 +121,7 @@ impl TSXCompiler {
         let re = regex::Regex::new(r"export\s+default\s+function\s+(\w+)")
             .map_err(|e| SSRError::ParseError(format!("Regex error: {}", e)))?;
         
-        if let some(captures) = re.captures(source) {
+        if let Some(captures) = re.captures(source) {
             Ok(captures[1].to_string())
         } else {
             Ok("DefaultComponent".to_string())

@@ -1217,7 +1217,9 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "swc_common",
  "swc_core",
+ "thiserror",
  "tokio",
  "walkdir",
 ]
