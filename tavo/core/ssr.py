@@ -1,7 +1,7 @@
 """
-Tavo SSR Implementation
+Tavo SSR Implementation - Updated for Inline Bundling
 
-SSR bridge implementation — Python ↔ rust_bundler. Provide sync/async API to render a route and return HTML.
+SSR bridge implementation — Python ↔ rust_bundler. Returns complete HTML with inline JavaScript bundle.
 """
 
 import asyncio
@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import time
+import platform
 
 logger = logging.getLogger(__name__)
 
@@ -23,27 +24,21 @@ class SSRError(Exception):
 class SSRRenderer:
     """
     Server-Side Rendering engine that bridges Python and Rust bundler.
+    Returns complete HTML with inline JavaScript for development.
     """
     
-    def __init__(self, build_dir: Path):
-        self.build_dir = build_dir
-        self.manifest: Optional[Dict[str, Any]] = None
-        self._load_manifest()
-    
-    def _load_manifest(self) -> None:
-        """Load build manifest for asset resolution."""
-        manifest_file = self.build_dir / "manifest.json"
+    def __init__(self, app_dir: Optional[Path] = None):
+        """
+        Initialize SSR renderer.
         
-        if manifest_file.exists():
-            try:
-                with manifest_file.open() as f:
-                    self.manifest = json.load(f)
-                logger.debug("Build manifest loaded")
-            except Exception as e:
-                logger.error(f"Failed to load manifest: {e}")
-                self.manifest = None
-        else:
-            logger.warning("No build manifest found - using development mode")
+        Args:
+            app_dir: Directory containing React components (defaults to ./app)
+        """
+        self.app_dir = app_dir or Path.cwd() / "app"
+        self._bundler_cache: Dict[str, Dict[str, Any]] = {}
+        
+        if not self.app_dir.exists():
+            logger.warning(f"App directory not found: {self.app_dir}")
     
     async def render_route(
         self, 
@@ -51,35 +46,33 @@ class SSRRenderer:
         context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Render a route server-side and return HTML.
+        Render a route and return complete HTML with inline JavaScript bundle.
         
         Args:
             route: Route path to render (e.g., "/", "/about")
             context: Optional context data for rendering
             
         Returns:
-            Rendered HTML string
+            Complete HTML string with inline JavaScript bundle
             
         Raises:
             SSRError: If rendering fails
-            
-        Example:
-            >>> renderer = SSRRenderer(Path("dist"))
-            >>> html = await renderer.render_route("/about", {"user": "John"})
         """
         logger.debug(f"Rendering route: {route}")
         
         try:
-            # Prepare rendering context
-            render_context = self._prepare_context(route, context or {})
+            # Get bundler output (HTML + JS bundle)
+            bundler_output = await self._get_bundler_output(route, context or {})
             
-            # Call rust bundler for SSR
-            html_content = await self._call_rust_ssr(route, render_context)
+            # Combine HTML and JS into single response
+            complete_html = self._create_complete_html(
+                bundler_output.get("html", ""),
+                bundler_output.get("js", ""),
+                route,
+                context or {}
+            )
             
-            # Inject client-side hydration script
-            html_with_hydration = self._inject_hydration_script(html_content, render_context)
-            
-            return html_with_hydration
+            return complete_html
             
         except Exception as e:
             logger.error(f"SSR failed for route {route}: {e}")
@@ -92,102 +85,82 @@ class SSRRenderer:
     ) -> str:
         """
         Synchronous version of render_route.
-        
-        Args:
-            route: Route path to render
-            context: Optional context data
-            
-        Returns:
-            Rendered HTML string
         """
         return asyncio.run(self.render_route(route, context))
     
-    def _prepare_context(self, route: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _get_bundler_output(self, route: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Prepare rendering context with route and build information.
+        Get bundler output with HTML and JavaScript bundle.
+        """
+        # Check cache first (for development efficiency)
+        cache_key = f"{route}:{hash(str(context))}"
+        if cache_key in self._bundler_cache:
+            return self._bundler_cache[cache_key]
         
-        Args:
-            route: Route being rendered
-            context: User-provided context
+        try:
+            bundler_path = self._get_bundler_path()
             
-        Returns:
-            Complete rendering context
-        """
-        render_context = {
-            "route": route,
-            "timestamp": time.time(),
-            "build_manifest": self.manifest,
-            "assets": self._get_route_assets(route),
-            **context
-        }
-        
-        return render_context
-    
-    def _get_route_assets(self, route: str) -> Dict[str, List[str]]:
-        """
-        Get CSS and JS assets for a specific route.
-        
-        Args:
-            route: Route path
+            # Prepare context for bundler
+            bundler_context = {
+                "route": route,
+                "timestamp": time.time(),
+                **context
+            }
             
-        Returns:
-            Dictionary with 'css' and 'js' asset lists
-        """
-        if not self.manifest:
-            return {"css": [], "js": []}
-        
-        # TODO: implement actual asset resolution from manifest
-        # This would look up route-specific assets from the build manifest
-        
-        return {
-            "css": self.manifest.get("client", {}).get("css", []),
-            "js": self.manifest.get("client", {}).get("js", [])
-        }
-    
-    async def _call_rust_ssr(self, route: str, context: Dict[str, Any]) -> str:
-        """
-        Call rust bundler to perform SSR.
-        
-        Args:
-            route: Route to render
-            context: Rendering context
+            cmd = [
+                str(bundler_path),
+                "--route", route,
+                "--app-dir", str(self.app_dir),
+                "--compile-type", "hydration",
+                "--output", "json"
+            ]
             
-        Returns:
-            Rendered HTML content
-        """
-        # TODO: implement actual rust bundler SSR call
-        # This would invoke the rust_bundler binary with ssr command
-        
-        context_json = json.dumps(context)
-        
-        # Mock implementation for now
-        logger.debug(f"Calling rust SSR for {route}")
-        
-        # This would be the actual implementation:
-        # cmd = ["rust_bundler", "ssr", "--route", route, "--context", context_json]
-        # result = await self._run_ssr_command(cmd)
-        # return result.stdout
-        
-        # Mock HTML response
-        return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Tavo App</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-    <div id="root">
-        <h1>SSR Route: {route}</h1>
-        <p>This content was server-side rendered.</p>
-    </div>
-</body>
-</html>
-"""
+            result = await self._run_bundler_command(cmd)
+            
+            # Parse JSON output
+            output_data = json.loads(result.stdout)
+            
+            # Cache result for development
+            self._bundler_cache[cache_key] = output_data
+            
+            return output_data
+            
+        except Exception as e:
+            logger.error(f"Bundler execution failed: {e}")
+            # Return minimal fallback
+            return {
+                "html": self._get_fallback_html(route),
+                "js": "console.log('Bundler failed, using fallback');"
+            }
     
-    async def _run_ssr_command(self, cmd: List[str]) -> subprocess.CompletedProcess:
-        """Run SSR command and return result."""
+    def _get_bundler_path(self) -> Path:
+        """Get path to the Rust bundler binary."""
+        system = platform.system().lower()
+        if system == "windows":
+            bin_name = "ssr-bundler.exe"
+            target = "x86_64-pc-windows-msvc"
+        elif system == "darwin":
+            bin_name = "ssr-bundler"
+            target = "x86_64-apple-darwin"
+        elif system == "linux":
+            bin_name = "ssr-bundler"
+            target = "x86_64-unknown-linux-gnu"
+        else:
+            raise SSRError(f"Unsupported platform: {system}")
+
+        # Look for bundler in project root
+        project_root = Path.cwd()
+        bundler_path = (
+            project_root / "rust_bundler" / "target" / target / "release" / bin_name
+        )
+
+        if not bundler_path.exists():
+            raise SSRError(f"SSR binary not found: {bundler_path}")
+
+        return bundler_path
+    
+    async def _run_bundler_command(self, cmd: List[str]) -> subprocess.CompletedProcess:
+        """Run bundler command and return result."""
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -195,9 +168,13 @@ class SSRRenderer:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), 
+                timeout=30.0
+            )
             
             if process.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
                 raise subprocess.CalledProcessError(
                     process.returncode, cmd, stdout, stderr # type: ignore
                 )
@@ -206,150 +183,138 @@ class SSRRenderer:
                 cmd, process.returncode, stdout.decode(), stderr.decode()
             )
             
+        except asyncio.TimeoutError:
+            logger.error("Bundler command timed out")
+            raise SSRError("Bundler execution timed out")
         except Exception as e:
-            logger.error(f"SSR command failed: {e}")
+            logger.error(f"Bundler command failed: {e}")
             raise
     
-    def _inject_hydration_script(self, html: str, context: Dict[str, Any]) -> str:
+    def _create_complete_html(
+        self, 
+        base_html: str, 
+        js_bundle: str, 
+        route: str, 
+        context: Dict[str, Any]
+    ) -> str:
         """
-        Inject client-side hydration script into HTML.
-        
-        Args:
-            html: Server-rendered HTML
-            context: Rendering context
-            
-        Returns:
-            HTML with hydration script injected
+        Create complete HTML document with inline JavaScript bundle.
         """
-        # Create hydration script
-        hydration_script = self._create_hydration_script(context)
+        # If base_html is minimal, enhance it
+        if not base_html or "<html" not in base_html.lower():
+            base_html = self._get_fallback_html(route)
         
-        # Inject before closing body tag
-        if "</body>" in html:
-            html = html.replace("</body>", f"{hydration_script}</body>")
+        # Create inline script with the complete bundle
+        inline_script = f"""
+<script type="module">
+// Tavo hydration bundle for route: {route}
+window.__TAVO_CONTEXT__ = {json.dumps(context, indent=2)};
+
+{js_bundle}
+</script>"""
+        
+        # Inject script before closing body tag
+        if "</body>" in base_html:
+            complete_html = base_html.replace("</body>", f"{inline_script}\n</body>")
         else:
-            html += hydration_script
+            # Fallback: add script at the end
+            complete_html = base_html + inline_script
         
-        return html
+        return complete_html
     
-    def _create_hydration_script(self, context: Dict[str, Any]) -> str:
-        """Create client-side hydration script."""
-        # Include assets
-        assets = context.get("assets", {})
-        css_links = ""
-        js_scripts = ""
-        
-        for css_file in assets.get("css", []):
-            css_links += f'<link rel="stylesheet" href="/{css_file}">\n'
-        
-        for js_file in assets.get("js", []):
-            js_scripts += f'<script src="/{js_file}"></script>\n'
-        
-        # Context for client-side hydration
-        context_script = f"""
-<script>
-window.__TAVO_CONTEXT__ = {json.dumps(context)};
-</script>
-"""
-        
-        return f"""
-{css_links}
-{context_script}
-{js_scripts}
-"""
+    def _get_fallback_html(self, route: str) -> str:
+        """
+        Generate fallback HTML structure when bundler fails or returns minimal HTML.
+        """
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tavo App - {route}</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #fff;
+        }}
+        #root {{ 
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .loading {{ 
+            text-align: center;
+            color: #666;
+        }}
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div class="loading">
+            <h2>Loading Tavo App...</h2>
+            <p>Route: {route}</p>
+        </div>
+    </div>
+</body>
+</html>"""
     
-    def preload_routes(self, routes: List[str]) -> None:
-        """
-        Preload routes for faster SSR.
-        
-        Args:
-            routes: List of routes to preload
-        """
-        # TODO: implement route preloading
-        logger.info(f"Preloading {len(routes)} routes")
+    def clear_cache(self) -> None:
+        """Clear the bundler output cache."""
+        self._bundler_cache.clear()
+        logger.debug("SSR cache cleared")
     
-    def get_render_stats(self) -> Dict[str, Any]:
-        """
-        Get SSR rendering statistics.
-        
-        Returns:
-            Rendering statistics
-        """
-        # TODO: implement actual stats collection
-        return {
-            "total_renders": 0,
-            "average_time": 0.0,
-            "cache_hits": 0,
-            "errors": 0
-        }
+    def get_cached_routes(self) -> List[str]:
+        """Get list of cached routes."""
+        return [key.split(":")[0] for key in self._bundler_cache.keys()]
 
 
-# Convenience functions
+# Convenience functions for the router
 async def render_route(
     route: str, 
     context: Optional[Dict[str, Any]] = None,
-    build_dir: Optional[Path] = None
+    app_dir: Optional[Path] = None
 ) -> str:
     """
-    Convenience function to render a route.
+    Convenience function to render a route with inline bundle.
     
     Args:
         route: Route path to render
         context: Optional rendering context
-        build_dir: Build directory (defaults to ./dist)
+        app_dir: App directory (defaults to ./app)
         
     Returns:
-        Rendered HTML string
-        
-    Example:
-        >>> html = await render_route("/dashboard", {"user_id": 123})
+        Complete HTML string with inline JavaScript
     """
-    if build_dir is None:
-        build_dir = Path("dist")
-    
-    renderer = SSRRenderer(build_dir)
+    renderer = SSRRenderer(app_dir)
     return await renderer.render_route(route, context)
 
 
 def render_route_sync(
     route: str, 
     context: Optional[Dict[str, Any]] = None,
-    build_dir: Optional[Path] = None
+    app_dir: Optional[Path] = None
 ) -> str:
-    """
-    Synchronous convenience function to render a route.
-    
-    Args:
-        route: Route path to render
-        context: Optional rendering context
-        build_dir: Build directory
-        
-    Returns:
-        Rendered HTML string
-    """
-    return asyncio.run(render_route(route, context, build_dir))
+    """Synchronous convenience function."""
+    return asyncio.run(render_route(route, context, app_dir))
 
 
 if __name__ == "__main__":
     # Example usage
     async def main():
-        build_dir = Path("dist")
-        renderer = SSRRenderer(build_dir)
+        renderer = SSRRenderer()
         
         try:
             html = await renderer.render_route("/", {"title": "Home Page"})
-            print("SSR HTML:")
-            print(html[:200] + "..." if len(html) > 200 else html)
+            print("Complete HTML with inline bundle:")
+            print(html[:500] + "..." if len(html) > 500 else html)
             
-            stats = renderer.get_render_stats()
-            print(f"Render stats: {stats}")
+            print(f"Cached routes: {renderer.get_cached_routes()}")
             
         except SSRError as e:
             print(f"SSR Error: {e}")
     
     asyncio.run(main())
-
-# Unit tests as comments:
-# 1. test_render_route_success() - verify successful route rendering
-# 2. test_render_route_error_handling() - test error handling for invalid routes
-# 3. test_inject_hydration_script() - verify hydration script injection works correctly

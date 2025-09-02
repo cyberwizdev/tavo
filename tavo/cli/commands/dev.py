@@ -19,7 +19,7 @@ import os
 from ..utils.npm import ensure_node_modules
 from tavo.core.hmr.websocket import HMRWebSocketServer
 from tavo.core.hmr.watcher import FileWatcher
-from tavo.core.bundler import start_watch_mode
+from tavo.core.utils.bundler import get_bundler_path, BundlerNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -129,41 +129,87 @@ class DevServer:
     
     def _check_bundler_available(self) -> bool:
         """Check if the Rust bundler binary is available."""
-        bundler_names = ["tavo-bundler", "tavo-bundler.exe", "rust_bundler", "rust_bundler.exe"]
-        
-        # Check in PATH first
-        for name in bundler_names:
-            if shutil.which(name):
-                return True
-        
-        # Check in project directory
-        project_dir = Path.cwd()
-        for name in bundler_names:
-            bundler_path = project_dir / name
-            if bundler_path.exists() and bundler_path.is_file():
-                return True
-        
-        return False
+        try:
+            get_bundler_path()
+            return True
+        except BundlerNotFound:
+            return False
     
     async def _start_bundler_watch(self) -> None:
-        """Start Rust bundler in watch mode (optional)."""
-        if not self._check_bundler_available():
-            if self.verbose:
-                logger.warning("Rust bundler not found - running without asset bundling")
-                logger.warning("Frontend assets will be served statically")
-            return
-        
+        """Start Rust bundler in development mode."""
         try:
-            project_dir = Path.cwd()
-            await start_watch_mode(project_dir)
-            
+            bundler_path = get_bundler_path()
+        except BundlerNotFound as e:
             if self.verbose:
-                logger.info("Rust bundler watch mode started")
+                logger.warning(str(e))
+                logger.warning("Running without asset bundling")
+            return
+
+        try:
+            # Use the SSR bundler with appropriate arguments for development
+            # This will compile routes for hydration mode
+            project_dir = Path.cwd()
+            app_dir = project_dir / "app"
+            
+            if not app_dir.exists():
+                logger.warning("No app directory found, skipping bundler")
+                return
+            
+            # For development, we'll run the bundler on-demand rather than in watch mode
+            # since the current bundler doesn't have a watch mode implemented
+            cmd = [
+                str(bundler_path), 
+                "--route", "/",  # Default route for now
+                "--app-dir", str(app_dir),
+                "--compile-type", "hydration",
+                "--output", "json"
+            ]
+            
+            # Test run the bundler to ensure it works
+            process = subprocess.Popen(
+                cmd,
+                cwd=project_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            # Wait for initial compilation
+            stdout, _ = process.communicate(timeout=30)
+            
+            if process.returncode == 0:
+                if self.verbose:
+                    logger.info(f"Rust bundler test compilation successful")
+                    logger.debug(f"Bundler output: {stdout}")
+            else:
+                logger.warning(f"Bundler test failed: {stdout}")
+                return
+                
+            # In a real implementation, you'd want to integrate this with file watching
+            # For now, we'll just verify the bundler works
+            if self.verbose:
+                logger.info(f"Rust bundler available at: {bundler_path}")
+
+        except subprocess.TimeoutExpired:
+            logger.warning("Bundler test compilation timed out")
+            process.kill()
         except Exception as e:
-            logger.warning(f"Failed to start Rust bundler: {e}")
+            logger.warning(f"Failed to test Rust bundler: {e}")
             if self.verbose:
                 logger.warning("Continuing without asset bundling...")
-    
+
+    def _monitor_bundler_output(self, process: subprocess.Popen) -> None:
+        """Log bundler output if verbose mode is on."""
+        if not process.stdout:
+            return
+        for line in iter(process.stdout.readline, ''):
+            if not line:
+                break
+            if self.verbose:
+                logger.info(f"Bundler: {line.strip()}")
+
     async def _start_asgi_server(self) -> None:
         """Start Python ASGI development server."""
         project_dir = Path.cwd()
@@ -196,7 +242,9 @@ class DevServer:
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
+            encoding='utf-8',
+            errors='replace'
         )
         self.processes.append(process)
         
@@ -355,39 +403,20 @@ def check_dev_requirements() -> bool:
 
 
 def check_bundler_status() -> dict:
-    """
-    Check bundler availability and return status info.
-    
-    Returns:
-        Dictionary with bundler status information
-    """
-    bundler_names = ["tavo-bundler", "tavo-bundler.exe", "rust_bundler", "rust_bundler.exe"]
-    
-    # Check in PATH
-    for name in bundler_names:
-        if shutil.which(name):
-            return {
-                "available": True,
-                "location": shutil.which(name),
-                "type": "system"
-            }
-    
-    # Check in project directory
-    project_dir = Path.cwd()
-    for name in bundler_names:
-        bundler_path = project_dir / name
-        if bundler_path.exists() and bundler_path.is_file():
-            return {
-                "available": True,
-                "location": str(bundler_path),
-                "type": "local"
-            }
-    
-    return {
-        "available": False,
-        "location": None,
-        "type": None
-    }
+    """Check bundler availability and return status info."""
+    try:
+        path = get_bundler_path()
+        return {
+            "available": True,
+            "location": str(path),
+            "type": "local",
+        }
+    except BundlerNotFound:
+        return {
+            "available": False,
+            "location": None,
+            "type": None,
+        }
 
 
 if __name__ == "__main__":
