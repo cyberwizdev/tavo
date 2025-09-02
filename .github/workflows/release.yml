@@ -1,0 +1,41 @@
+name: Build and Release (Rust Bundler)
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # runs when you push a version tag like v0.1.0
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build binary
+        working-directory: rust_bundler
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssr-bundler-${{ matrix.target }}
+          path: rust_bundler/target/${{ matrix.target }}/release/ssr-bundler${{ matrix.os == 'windows-latest' && '.exe' || '' }}
