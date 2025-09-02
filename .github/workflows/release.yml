@@ -31,7 +31,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Build binary
-        working-directory: rust_bundler
+        working-directory: tavo/rust_bundler
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Upload artifact
