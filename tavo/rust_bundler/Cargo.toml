@@ -8,7 +8,6 @@ name = "ssr-bundler"
 path = "src/main.rs"
 
 [dependencies]
-
 # SWC compiler stack
 swc_core = { version = "38.0.0", features = [
     "ecma_ast",
