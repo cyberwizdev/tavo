@@ -8,6 +8,8 @@ name = "ssr-bundler"
 path = "src/main.rs"
 
 [dependencies]
+
+# SWC compiler stack
 swc_core = { version = "38.0.0", features = [
     "ecma_ast",
     "ecma_parser", 
@@ -18,14 +20,23 @@ swc_core = { version = "38.0.0", features = [
     "common",
     "ecma_visit"
 ] }
-thiserror = "2.0"
 swc_common = "14.0.3"
 
-# Other dependencies
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Async + CLI
 tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = { version = "4.0", features = ["derive"] }
-anyhow = "1.0"
+
+# Utilities
 walkdir = "2.3"
 regex = "1.5"
+
+# JavaScript runtime for SSR
+rquickjs = { version = "0.8", features = ["full"] }

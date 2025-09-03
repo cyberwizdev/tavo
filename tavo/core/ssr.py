@@ -1,7 +1,8 @@
 """
-Tavo SSR Implementation - Updated for Inline Bundling
+Tavo SSR Implementation - Fixed JSON Serialization
 
 SSR bridge implementation — Python ↔ rust_bundler. Returns complete HTML with inline JavaScript bundle.
+Fixed to handle non-serializable context data.
 """
 
 import asyncio
@@ -9,9 +10,10 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 import time
-import platform
+
+from tavo.core.utils.bundler import get_bundler_path
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +63,18 @@ class SSRRenderer:
         logger.debug(f"Rendering route: {route}")
         
         try:
+            # Clean context to only include serializable data
+            clean_context = self._sanitize_context(context or {})
+            
             # Get bundler output (HTML + JS bundle)
-            bundler_output = await self._get_bundler_output(route, context or {})
+            bundler_output = await self._get_bundler_output(route, clean_context)
             
             # Combine HTML and JS into single response
             complete_html = self._create_complete_html(
                 bundler_output.get("html", ""),
                 bundler_output.get("js", ""),
                 route,
-                context or {}
+                clean_context
             )
             
             return complete_html
@@ -88,24 +93,79 @@ class SSRRenderer:
         """
         return asyncio.run(self.render_route(route, context))
     
+    def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean context data to only include JSON-serializable values.
+        
+        Args:
+            context: Raw context that may contain non-serializable objects
+            
+        Returns:
+            Clean context with only serializable data
+        """
+        def is_serializable(value: Any) -> bool:
+            """Check if a value is JSON serializable."""
+            try:
+                json.dumps(value)
+                return True
+            except (TypeError, ValueError):
+                return False
+        
+        def serialize_value(value: Any) -> Any:
+            """Convert value to serializable form or skip it."""
+            if value is None or isinstance(value, (str, int, float, bool)):
+                return value
+            elif isinstance(value, (list, tuple)):
+                return [serialize_value(item) for item in value if is_serializable(serialize_value(item))]
+            elif isinstance(value, dict):
+                return {k: serialize_value(v) for k, v in value.items() if is_serializable(serialize_value(v))}
+            elif hasattr(value, '__dict__'):
+                # Try to serialize object attributes
+                try:
+                    return {k: serialize_value(v) for k, v in value.__dict__.items() if is_serializable(serialize_value(v))}
+                except:
+                    return str(value)  # Fallback to string representation
+            else:
+                # For other types, try string conversion or skip
+                try:
+                    str_value = str(value)
+                    return str_value if len(str_value) < 500 else f"{str_value[:100]}..."
+                except:
+                    return None
+        
+        clean_context = {}
+        
+        for key, value in context.items():
+            try:
+                serialized_value = serialize_value(value)
+                if serialized_value is not None:
+                    clean_context[key] = serialized_value
+            except Exception as e:
+                logger.debug(f"Skipping context key '{key}': {e}")
+                # Skip non-serializable values
+                continue
+        
+        # Add safe metadata
+        clean_context["_tavo"] = {
+            "route": context.get("url", "unknown"),
+            "timestamp": int(time.time()),
+            "development": context.get("development", True)
+        }
+        
+        return clean_context
+    
     async def _get_bundler_output(self, route: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get bundler output with HTML and JavaScript bundle.
         """
         # Check cache first (for development efficiency)
-        cache_key = f"{route}:{hash(str(context))}"
+        cache_key = f"{route}:{hash(str(sorted(context.items())))}"
         if cache_key in self._bundler_cache:
+            logger.debug(f"Using cached bundler output for {route}")
             return self._bundler_cache[cache_key]
         
         try:
-            bundler_path = self._get_bundler_path()
-            
-            # Prepare context for bundler
-            bundler_context = {
-                "route": route,
-                "timestamp": time.time(),
-                **context
-            }
+            bundler_path = get_bundler_path()
             
             cmd = [
                 str(bundler_path),
@@ -119,10 +179,12 @@ class SSRRenderer:
             
             # Parse JSON output
             output_data = json.loads(result.stdout)
+            logger.debug(f"Bundler output: {output_data}")
             
             # Cache result for development
             self._bundler_cache[cache_key] = output_data
             
+            logger.debug(f"Bundler output cached for {route}")
             return output_data
             
         except Exception as e:
@@ -132,33 +194,7 @@ class SSRRenderer:
                 "html": self._get_fallback_html(route),
                 "js": "console.log('Bundler failed, using fallback');"
             }
-    
-    def _get_bundler_path(self) -> Path:
-        """Get path to the Rust bundler binary."""
-        system = platform.system().lower()
-        if system == "windows":
-            bin_name = "ssr-bundler.exe"
-            target = "x86_64-pc-windows-msvc"
-        elif system == "darwin":
-            bin_name = "ssr-bundler"
-            target = "x86_64-apple-darwin"
-        elif system == "linux":
-            bin_name = "ssr-bundler"
-            target = "x86_64-unknown-linux-gnu"
-        else:
-            raise SSRError(f"Unsupported platform: {system}")
-
-        # Look for bundler in project root
-        project_root = Path.cwd()
-        bundler_path = (
-            project_root / "rust_bundler" / "target" / target / "release" / bin_name
-        )
-
-        if not bundler_path.exists():
-            raise SSRError(f"SSR binary not found: {bundler_path}")
-
-        return bundler_path
-    
+     
     async def _run_bundler_command(self, cmd: List[str]) -> subprocess.CompletedProcess:
         """Run bundler command and return result."""
         try:
@@ -175,6 +211,7 @@ class SSRRenderer:
             
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown error"
+                logger.error(f"Bundler stderr: {error_msg}")
                 raise subprocess.CalledProcessError(
                     process.returncode, cmd, stdout, stderr # type: ignore
                 )
@@ -204,11 +241,27 @@ class SSRRenderer:
         if not base_html or "<html" not in base_html.lower():
             base_html = self._get_fallback_html(route)
         
+        # Safely serialize context to JSON
+        try:
+            context_json = json.dumps(context, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to serialize context: {e}")
+            context_json = json.dumps({"error": "Context serialization failed"}, indent=2)
+        
         # Create inline script with the complete bundle
         inline_script = f"""
 <script type="module">
 // Tavo hydration bundle for route: {route}
-window.__TAVO_CONTEXT__ = {json.dumps(context, indent=2)};
+window.__TAVO_CONTEXT__ = {context_json};
+
+// Initialize Tavo runtime
+if (!window.__TAVO_RUNTIME__) {{
+    window.__TAVO_RUNTIME__ = {{
+        route: "{route}",
+        hydrated: false,
+        context: window.__TAVO_CONTEXT__
+    }};
+}}
 
 {js_bundle}
 </script>"""
@@ -231,7 +284,7 @@ window.__TAVO_CONTEXT__ = {json.dumps(context, indent=2)};
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tavo App - {route}</title>
+    <title>Tavo App{' - ' + route if route != '/' else ''}</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{ 
@@ -249,14 +302,23 @@ window.__TAVO_CONTEXT__ = {json.dumps(context, indent=2)};
         .loading {{ 
             text-align: center;
             color: #666;
+            padding: 2rem;
+        }}
+        .route-info {{
+            background: #f5f5f5;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-top: 1rem;
         }}
     </style>
 </head>
 <body>
     <div id="root">
         <div class="loading">
-            <h2>Loading Tavo App...</h2>
-            <p>Route: {route}</p>
+            <h2>Tavo App</h2>
+            <div class="route-info">Route: {route}</div>
+            <p>Initializing...</p>
         </div>
     </div>
 </body>
@@ -269,7 +331,12 @@ window.__TAVO_CONTEXT__ = {json.dumps(context, indent=2)};
     
     def get_cached_routes(self) -> List[str]:
         """Get list of cached routes."""
-        return [key.split(":")[0] for key in self._bundler_cache.keys()]
+        routes = []
+        for key in self._bundler_cache.keys():
+            route_part = key.split(":")[0]
+            if route_part not in routes:
+                routes.append(route_part)
+        return routes
 
 
 # Convenience functions for the router
@@ -307,14 +374,26 @@ if __name__ == "__main__":
     async def main():
         renderer = SSRRenderer()
         
+        # Test with potentially problematic context
+        test_context = {
+            "url": "/test",
+            "method": "GET",
+            "headers": {"content-type": "application/json"},
+            "development": True,
+            "function_obj": lambda x: x,  # This would cause the original error
+            "nested": {
+                "data": "value",
+                "number": 42
+            }
+        }
+        
         try:
-            html = await renderer.render_route("/", {"title": "Home Page"})
-            print("Complete HTML with inline bundle:")
-            print(html[:500] + "..." if len(html) > 500 else html)
-            
+            html = await renderer.render_route("/", test_context)
+            print("✅ Successfully rendered with complex context")
+            print(f"HTML length: {len(html)} characters")
             print(f"Cached routes: {renderer.get_cached_routes()}")
             
         except SSRError as e:
-            print(f"SSR Error: {e}")
+            print(f"❌ SSR Error: {e}")
     
     asyncio.run(main())

@@ -1,7 +1,7 @@
 """
-Tavo Dev Command
+Tavo Dev Command with Integrated Routing
 
-Run dev server: start Python ASGI app, start rust_bundler in watch mode, start HMR websocket server.
+Run dev server: create ASGI app with routing, start HMR websocket server, start file watcher.
 """
 
 import asyncio
@@ -12,20 +12,27 @@ from typing import Optional
 import signal
 import sys
 import threading
-import time
-import shutil
-import os
+
+from starlette.applications import Starlette
+from starlette.staticfiles import StaticFiles
+from starlette.responses import HTMLResponse, JSONResponse
+from starlette.routing import Route, Mount
+from starlette.requests import Request
+import uvicorn
 
 from ..utils.npm import ensure_node_modules
 from tavo.core.hmr.websocket import HMRWebSocketServer
 from tavo.core.hmr.watcher import FileWatcher
 from tavo.core.utils.bundler import get_bundler_path, BundlerNotFound
+from tavo.core.ssr import SSRRenderer
+from tavo.core.middleware import TavoMiddleware
+from tavo.core.routing import FileBasedRouter
 
 logger = logging.getLogger(__name__)
 
 
 class DevServer:
-    """Development server coordinator that manages multiple processes."""
+    """Development server that creates and manages the complete ASGI application."""
     
     def __init__(self, host: str = "localhost", port: int = 3000, reload: bool = True, verbose: bool = False):
         self.host = host
@@ -36,6 +43,19 @@ class DevServer:
         self.hmr_server: Optional[HMRWebSocketServer] = None
         self.file_watcher: Optional[FileWatcher] = None
         self._shutdown_event = threading.Event()
+        
+        # Application components
+        self.app: Optional[Starlette] = None
+        self.ssr_renderer: Optional[SSRRenderer] = None
+        self.api_router: Optional[FileBasedRouter] = None
+        self.app_router: Optional[FileBasedRouter] = None
+        
+        # Project paths
+        self.project_root = Path.cwd()
+        self.app_dir = self.project_root / "app"
+        self.api_dir = self.project_root / "api"
+        self.public_dir = self.project_root / "public"
+        
         self._setup_logging()
     
     def _setup_logging(self) -> None:
@@ -55,17 +75,16 @@ class DevServer:
             # Ensure dependencies are installed
             await self._ensure_dependencies()
             
+            # Create the ASGI application with routing
+            await self._create_application()
+            
             # Start services
             await self._start_hmr_server()
             await self._start_file_watcher()
-            await self._start_bundler_watch()
-            await self._start_asgi_server()
+            await self._verify_bundler()
             
-            # Log server info and route summary
-            await self._log_server_status()
-            
-            # Wait for shutdown signal
-            await self._wait_for_shutdown()
+            # Start the ASGI server
+            await self._start_integrated_server()
             
         except Exception as e:
             logger.error(f"Failed to start dev server: {e}")
@@ -98,34 +117,372 @@ class DevServer:
     
     async def _ensure_dependencies(self) -> None:
         """Ensure Node.js dependencies are installed."""
-        project_dir = Path.cwd()
-        if not ensure_node_modules(project_dir):
+        if not ensure_node_modules(self.project_root):
             if self.verbose:
                 logger.warning("Node modules not found, run 'tavo install' first")
     
+    async def _create_application(self) -> None:
+        """Create the complete Starlette application with routing."""
+        logger.info("Setting up application routing...")
+        
+        # Initialize SSR renderer
+        self.ssr_renderer = SSRRenderer(app_dir=self.app_dir)
+        
+        # Initialize routers
+        self.api_router = FileBasedRouter(self.api_dir, prefix="/api")
+        self.app_router = FileBasedRouter(self.app_dir, renderer=self.ssr_renderer)
+        
+        # Discover routes
+        await self.api_router.discover_routes()
+        await self.app_router.discover_routes()
+        
+        # Create initial routes
+        initial_routes: list[Route | Mount] = [
+            Route("/health", self._health_check),
+            Route("/_routes", self._routes_info),
+            Route("/_hmr", self._hmr_endpoint),
+        ]
+        
+        # Add static files if public directory exists
+        if self.public_dir.exists():
+            initial_routes.extend([
+                Mount("/static", StaticFiles(directory=self.public_dir), name="static"),
+                Mount("/favicon.ico", StaticFiles(directory=self.public_dir), name="favicon")
+            ])
+        
+        # Create the application
+        self.app = Starlette(debug=True, routes=initial_routes)
+        
+        # Add middleware
+        self.app.add_middleware(TavoMiddleware)
+        
+        # Mount API routes
+        if self.api_router.routes:
+            api_mount = Mount("/api", self.api_router.get_starlette_routes())
+            self.app.router.routes.insert(0, api_mount)
+            logger.info(f"Mounted {len(self.api_router.routes)} API routes")
+        
+        # Add SSR catch-all route LAST
+        self.app.router.routes.append(Route("/{path:path}", self._ssr_handler))
+        
+        # Log route summary
+        self._log_routes()
+    
+    async def _health_check(self, request: Request):
+        """Health check endpoint."""
+        return JSONResponse({
+            "status": "healthy",
+            "app": "Tavo Dev Server",
+            "routes": {
+                "api": len(self.api_router.routes) if self.api_router else 0,
+                "pages": len(self.app_router.routes) if self.app_router else 0,
+            },
+        })
+    
+    async def _routes_info(self, request: Request):
+        """Return detailed route information."""
+        try:
+            api_routes = []
+            page_routes = []
+            
+            # Get API route info
+            if self.api_router:
+                api_routes = self.api_router.get_route_info()
+            
+            # Get page route info
+            if self.app_router:
+                page_routes = self.app_router.get_route_info()
+            
+            return JSONResponse({
+                "api": api_routes,
+                "pages": page_routes,
+                "total": len(api_routes) + len(page_routes)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting route info: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+    
+    async def _hmr_endpoint(self, request: Request):
+        """HMR status endpoint."""
+        return JSONResponse({
+            "hmr": "enabled" if self.reload else "disabled",
+            "websocket": f"ws://localhost:{self.port + 1}",
+            "bundler_available": self._check_bundler_available(),
+        })
+    
+    async def _not_found(self, request: Request):
+        """Catch-all 404 handler."""
+        return JSONResponse({"error": "Route not found"}, status_code=404)
+    
+    async def _ssr_handler(self, request: Request):
+        """SSR catch-all handler for page routes."""
+        path = request.url.path
+        
+        # Skip API routes
+        if path.startswith('/api/'):
+            return JSONResponse({"error": "Route not found"}, status_code=404)
+        
+        try:
+            # Check if the corresponding page file exists
+            page_file_path = self._get_page_file_path(path)
+            if not page_file_path:
+                # No matching page file found, return 404
+                return HTMLResponse(content=self._get_not_found_html(path), status_code=404)
+            
+            # Find matching route
+            route_match = self.app_router.match_route(path) if self.app_router else None
+            
+            # Prepare SSR context
+            ssr_context = {
+                "url": str(request.url),
+                "method": request.method,
+                "headers": dict(request.headers),
+                "query_params": dict(request.query_params),
+                "route_params": route_match.params if route_match else {},
+                "development": True,
+                "hmr_port": self.port + 1 if self.reload else None,
+                "page_file": str(page_file_path),
+            }
+            
+            # Render the route
+            if self.ssr_renderer:
+                html_content = await self.ssr_renderer.render_route(path, ssr_context)
+                return HTMLResponse(content=html_content)
+            else:
+                # Fallback HTML
+                fallback_html = self._get_fallback_html(path)
+                return HTMLResponse(content=fallback_html)
+                
+        except Exception as e:
+            logger.error(f"SSR error for path '{path}': {e}")
+            fallback_html = self._get_fallback_html(path, error=str(e))
+            return HTMLResponse(content=fallback_html, status_code=500)
+
+    def _get_page_file_path(self, path: str) -> Optional[Path]:
+        """
+        Check if a page file exists for the given path.
+        Only looks for page.tsx or page.jsx files.
+        
+        Args:
+            path: The request path (e.g., "/", "/about", "/users/123")
+        
+        Returns:
+            Path to the page file if it exists, None otherwise
+        """
+        if not self.app_dir.exists():
+            return None
+        
+        # Normalize path
+        clean_path = path.strip('/')
+        
+        # Handle root path
+        if not clean_path:
+            # Check for app/page.tsx or app/page.jsx
+            for filename in ['page.tsx', 'page.jsx']:
+                page_file = self.app_dir / filename
+                if page_file.exists():
+                    return page_file
+            return None
+        
+        # Handle nested paths (e.g., "/about" -> "app/about/page.tsx")
+        path_parts = clean_path.split('/')
+        
+        # Only check for page.tsx and page.jsx in the directory structure
+        for extension in ['tsx', 'jsx']:
+            page_file = self.app_dir
+            for part in path_parts:
+                page_file = page_file / part
+            page_file = page_file / f'page.{extension}'
+            
+            if page_file.exists():
+                return page_file
+        
+        return None
+
+    def _get_not_found_html(self, path: str = "/") -> str:
+        """Generate a proper 404 Not Found HTML page."""
+        hmr_script = ""
+        if self.reload:
+            hmr_script = f"""
+    <script>
+    // HMR WebSocket connection
+    const ws = new WebSocket('ws://localhost:{self.port + 1}');
+    ws.onmessage = (event) => {{
+        const data = JSON.parse(event.data);
+        if (data.type === 'reload') {{
+        window.location.reload();
+        }}
+    }};
+    </script>"""
+        
+        return f"""<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>404 - Page Not Found | Tavo App</title>
+        <style>
+            body {{ 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                margin: 0; padding: 2rem; background: #f5f5f5;
+                display: flex; align-items: center; justify-content: center;
+                min-height: 100vh;
+            }}
+            .container {{ 
+                max-width: 500px; background: white; 
+                padding: 3rem 2rem; border-radius: 12px; 
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                text-align: center;
+            }}
+            .error-code {{
+                font-size: 4rem; font-weight: bold; 
+                color: #dc2626; margin: 0;
+            }}
+            .error-title {{
+                font-size: 1.5rem; color: #374151;
+                margin: 0.5rem 0 1rem 0;
+            }}
+            .error-message {{
+                color: #6b7280; margin-bottom: 2rem;
+                line-height: 1.6;
+            }}
+            .path-info {{
+                background: #f3f4f6; padding: 0.75rem 1rem;
+                border-radius: 6px; font-family: 'Courier New', monospace;
+                font-size: 0.9rem; color: #374151;
+                word-break: break-all; margin: 1rem 0;
+            }}
+            .suggestions {{
+                text-align: left; background: #fefce8;
+                padding: 1rem; border-radius: 6px;
+                border-left: 4px solid #eab308;
+            }}
+            .suggestions h4 {{
+                margin: 0 0 0.5rem 0; color: #92400e;
+            }}
+            .suggestions ul {{
+                margin: 0; padding-left: 1.2rem;
+                color: #92400e;
+            }}
+            .suggestions li {{
+                margin: 0.25rem 0;
+            }}
+            .home-link {{
+                display: inline-block; margin-top: 2rem;
+                padding: 0.75rem 1.5rem; background: #3b82f6;
+                color: white; text-decoration: none;
+                border-radius: 6px; transition: background 0.2s;
+            }}
+            .home-link:hover {{
+                background: #2563eb;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 class="error-code">404</h1>
+            <h2 class="error-title">Page Not Found</h2>
+            <p class="error-message">
+                The page you're looking for doesn't exist or hasn't been created yet.
+            </p>
+            
+            <div class="path-info">
+                Requested path: {path}
+            </div>
+            
+            <div class="suggestions">
+                <h4>To create this page:</h4>
+                <ul>
+                    <li>Create <code>app{path if path != '/' else ''}/page.tsx</code> or <code>app{path if path != '/' else ''}/page.jsx</code></li>
+                    <li>Make sure the file exports a React component as default</li>
+                </ul>
+            </div>
+            
+            <a href="/" class="home-link">← Back to Home</a>
+            
+            <div id="root"></div>
+        </div>
+        {hmr_script}
+    </body>
+    </html>"""    
+    def _get_fallback_html(self, path: str = "/", error: Optional[str] = None) -> str:
+        """Generate fallback HTML when SSR fails."""
+        hmr_script = ""
+        if self.reload:
+            hmr_script = f"""
+<script>
+  // HMR WebSocket connection
+  const ws = new WebSocket('ws://localhost:{self.port + 1}');
+  ws.onmessage = (event) => {{
+    const data = JSON.parse(event.data);
+    if (data.type === 'reload') {{
+      window.location.reload();
+    }}
+  }};
+</script>"""
+        
+        error_message = f"<p>Error: {error}</p>" if error else ""
+        
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tavo App - {path}</title>
+    <style>
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0; padding: 2rem; background: #f5f5f5;
+        }}
+        .container {{ 
+            max-width: 600px; margin: 0 auto; background: white; 
+            padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        .error {{ color: #dc2626; background: #fef2f2; padding: 1rem; border-radius: 4px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tavo Development Server</h1>
+        <p>Route: <code>{path}</code></p>
+        {error_message}
+        <p>SSR not available - using fallback HTML</p>
+        <div id="root"></div>
+    </div>
+    {hmr_script}
+</body>
+</html>"""
+    
     async def _start_hmr_server(self) -> None:
         """Start HMR WebSocket server."""
+        if not self.reload:
+            return
+            
         hmr_port = self.port + 1
         self.hmr_server = HMRWebSocketServer(port=hmr_port)
         await self.hmr_server.start()
         
-        if self.verbose:
-            logger.info(f"HMR server started on port {hmr_port}")
+        logger.info(f"HMR server started on ws://localhost:{hmr_port}")
     
     async def _start_file_watcher(self) -> None:
         """Start file watcher for HMR."""
         if not self.reload:
             return
         
-        project_dir = Path.cwd()
-        self.file_watcher = FileWatcher(
-            watch_dirs=[project_dir / "app", project_dir / "api"],
-            hmr_server=self.hmr_server
-        )
-        await self.file_watcher.start()
+        watch_dirs = []
+        if self.app_dir.exists():
+            watch_dirs.append(self.app_dir)
+        if self.api_dir.exists():
+            watch_dirs.append(self.api_dir)
         
-        if self.verbose:
-            logger.info("File watcher started")
+        if watch_dirs:
+            self.file_watcher = FileWatcher(
+                watch_dirs=watch_dirs,
+                hmr_server=self.hmr_server
+            )
+            await self.file_watcher.start()
+            logger.info(f"File watcher started for {len(watch_dirs)} directories")
     
     def _check_bundler_available(self) -> bool:
         """Check if the Rust bundler binary is available."""
@@ -135,218 +492,68 @@ class DevServer:
         except BundlerNotFound:
             return False
     
-    async def _start_bundler_watch(self) -> None:
-        """Start Rust bundler in development mode."""
-        try:
+    async def _verify_bundler(self) -> None:
+        """Verify bundler availability."""
+        bundler_available = self._check_bundler_available()
+        
+        if bundler_available:
             bundler_path = get_bundler_path()
-        except BundlerNotFound as e:
-            if self.verbose:
-                logger.warning(str(e))
-                logger.warning("Running without asset bundling")
-            return
-
-        try:
-            # Use the SSR bundler with appropriate arguments for development
-            # This will compile routes for hydration mode
-            project_dir = Path.cwd()
-            app_dir = project_dir / "app"
-            
-            if not app_dir.exists():
-                logger.warning("No app directory found, skipping bundler")
-                return
-            
-            # For development, we'll run the bundler on-demand rather than in watch mode
-            # since the current bundler doesn't have a watch mode implemented
-            cmd = [
-                str(bundler_path), 
-                "--route", "/",  # Default route for now
-                "--app-dir", str(app_dir),
-                "--compile-type", "hydration",
-                "--output", "json"
-            ]
-            
-            # Test run the bundler to ensure it works
-            process = subprocess.Popen(
-                cmd,
-                cwd=project_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            # Wait for initial compilation
-            stdout, _ = process.communicate(timeout=30)
-            
-            if process.returncode == 0:
-                if self.verbose:
-                    logger.info(f"Rust bundler test compilation successful")
-                    logger.debug(f"Bundler output: {stdout}")
-            else:
-                logger.warning(f"Bundler test failed: {stdout}")
-                return
-                
-            # In a real implementation, you'd want to integrate this with file watching
-            # For now, we'll just verify the bundler works
-            if self.verbose:
-                logger.info(f"Rust bundler available at: {bundler_path}")
-
-        except subprocess.TimeoutExpired:
-            logger.warning("Bundler test compilation timed out")
-            process.kill()
-        except Exception as e:
-            logger.warning(f"Failed to test Rust bundler: {e}")
-            if self.verbose:
-                logger.warning("Continuing without asset bundling...")
-
-    def _monitor_bundler_output(self, process: subprocess.Popen) -> None:
-        """Log bundler output if verbose mode is on."""
-        if not process.stdout:
-            return
-        for line in iter(process.stdout.readline, ''):
-            if not line:
-                break
-            if self.verbose:
-                logger.info(f"Bundler: {line.strip()}")
-
-    async def _start_asgi_server(self) -> None:
-        """Start Python ASGI development server."""
-        project_dir = Path.cwd()
-        main_module = "main:app"
-        
-        if (project_dir / "backend" / "main.py").exists():
-            main_module = "backend.main:app"
-        elif not (project_dir / "main.py").exists():
-            logger.error("No main.py found in project root or backend/ directory")
-            raise FileNotFoundError("ASGI application entry point not found")
-        
-        # Set environment variable to enable route logging
-        env = os.environ.copy()
-        env["TAVO_LOG_ROUTES"] = "1"
-        
-        cmd = [
-            sys.executable, "-m", "uvicorn",
-            main_module,
-            "--host", self.host,
-            "--port", str(self.port),
-            "--log-level", "warning",  # Reduce uvicorn noise
-        ]
-        
-        if self.reload:
-            cmd.append("--reload")
-        
-        process = subprocess.Popen(
-            cmd,
-            cwd=project_dir,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-        self.processes.append(process)
-        
-        # Monitor ASGI server output for route information
-        threading.Thread(target=self._monitor_asgi_output, args=(process,), daemon=True).start()
+            logger.info(f"Rust bundler available at: {bundler_path}")
+        else:
+            logger.warning("Rust bundler not found - using fallback HTML for SSR routes")
     
-    def _monitor_asgi_output(self, process: subprocess.Popen) -> None:
-        """Monitor ASGI server output and extract route information."""
-        if not process.stdout:
-            return
-        
-        routes_logged = False
-        
-        for line in iter(process.stdout.readline, ''):
-            if not line:
-                break
-            
-            line = line.strip()
-            
-            # Look for application startup complete
-            if "Application startup complete" in line and not routes_logged:
-                routes_logged = True
-                # Give the app a moment to finish startup
-                time.sleep(0.5)
-                self._fetch_and_log_routes()
-            
-            # Log important messages
-            if any(keyword in line.lower() for keyword in ["error", "warning", "started", "listening"]):
-                if self.verbose or "error" in line.lower():
-                    logger.info(f"ASGI: {line}")
-    
-    def _fetch_and_log_routes(self) -> None:
-        """Fetch route information from the running server and log it."""
-        try:
-            import requests
-            response = requests.get(f"http://{self.host}:{self.port}/health", timeout=2)
-            
-            if response.status_code == 200:
-                data = response.json()
-                api_count = data.get("routes", {}).get("api", 0)
-                page_count = data.get("routes", {}).get("pages", 0)
-                
-                logger.info(f"Server ready at http://{self.host}:{self.port}")
-                logger.info(f"Routes: {api_count} API endpoints, {page_count} pages")
-                
-                # Try to get detailed route info if available
-                self._log_detailed_routes()
-                
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Could not fetch route info: {e}")
-    
-    def _log_detailed_routes(self) -> None:
-        """Log detailed route information."""
-        try:
-            import requests
-            
-            # Try to get route details (this would need to be implemented in main.py)
-            response = requests.get(f"http://{self.host}:{self.port}/_routes", timeout=1)
-            
-            if response.status_code == 200:
-                routes = response.json()
-                
-                logger.info("Registered routes:")
-                for route in routes.get("api", []):
-                    methods = ", ".join(route.get("methods", ["GET"]))
-                    logger.info(f"  API  {route['path']} [{methods}]")
-                
-                for route in routes.get("pages", []):
-                    logger.info(f"  PAGE {route['path']}")
-                    
-        except Exception:
-            # Silently fail - detailed routes are optional
-            pass
-    
-    async def _log_server_status(self) -> None:
-        """Log server status and configuration."""
-        bundler_status = check_bundler_status()
+    async def _start_integrated_server(self) -> None:
+        """Start the integrated ASGI server."""
+        if not self.app:
+            raise RuntimeError("Application not created")
         
         logger.info(f"Development server starting on http://{self.host}:{self.port}")
-        
-        if bundler_status["available"]:
-            logger.info(f"Asset bundling: enabled ({bundler_status['type']})")
-        else:
-            logger.info("Asset bundling: disabled (bundler not found)")
-        
         logger.info(f"Hot reload: {'enabled' if self.reload else 'disabled'}")
         
-        if not self.verbose:
-            logger.info("Use --verbose for detailed logging")
-    
-    async def _wait_for_shutdown(self) -> None:
-        """Wait for shutdown signal."""
+        # Create uvicorn config
+        config = uvicorn.Config(
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="info" if self.verbose else "warning",
+            access_log=self.verbose,
+        )
+        
+        # Start server
+        server = uvicorn.Server(config)
+        
+        # Set up signal handlers
         def signal_handler(signum, frame):
             asyncio.create_task(self.stop())
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
-        # Wait for shutdown event
-        while not self._shutdown_event.is_set():
-            await asyncio.sleep(0.1)
+        try:
+            await server.serve()
+        except Exception as e:
+            logger.error(f"Server error: {e}")
+            raise
+    
+    def _log_routes(self) -> None:
+        """Log registered routes."""
+        if not self.verbose:
+            return
+            
+        logger.info("Registered routes:")
+        
+        if self.app:
+            for route in self.app.routes:
+                if isinstance(route, Route):
+                    methods = list(route.methods) if route.methods else ["GET"]
+                    logger.info(f"  {route.path} [{', '.join(methods)}]")
+                elif isinstance(route, Mount):
+                    logger.info(f"  Mount: {route.path}")
+                    if hasattr(route, 'routes'):
+                        for sub_route in route.routes:
+                            if isinstance(sub_route, Route):
+                                methods = list(sub_route.methods) if sub_route.methods else ["GET"]
+                                logger.info(f"    {sub_route.path} [{', '.join(methods)}]")
 
 
 def start_dev_server(
@@ -356,7 +563,7 @@ def start_dev_server(
     verbose: bool = False
 ) -> None:
     """
-    Start the development server with all services.
+    Start the development server with integrated routing.
     
     Args:
         host: Host to bind to
@@ -384,39 +591,15 @@ def check_dev_requirements() -> bool:
     """
     project_dir = Path.cwd()
     
-    # Check for main.py (ASGI app) in root or backend/
-    main_py_locations = [
-        project_dir / "main.py",
-        project_dir / "backend" / "main.py"
-    ]
+    # Check for app or api directory
+    has_app = (project_dir / "app").exists()
+    has_api = (project_dir / "api").exists()
     
-    if not any(loc.exists() for loc in main_py_locations):
-        logger.error("main.py not found - not a Tavo project?")
-        return False
-    
-    # Check for app directory
-    if not (project_dir / "app").exists():
-        logger.error("app/ directory not found")
+    if not (has_app or has_api):
+        logger.error("Neither app/ nor api/ directory found - not a Tavo project?")
         return False
     
     return True
-
-
-def check_bundler_status() -> dict:
-    """Check bundler availability and return status info."""
-    try:
-        path = get_bundler_path()
-        return {
-            "available": True,
-            "location": str(path),
-            "type": "local",
-        }
-    except BundlerNotFound:
-        return {
-            "available": False,
-            "location": None,
-            "type": None,
-        }
 
 
 if __name__ == "__main__":
@@ -424,22 +607,6 @@ if __name__ == "__main__":
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
     
     if check_dev_requirements():
-        bundler_status = check_bundler_status()
-        
-        if verbose:
-            if bundler_status["available"]:
-                print(f"Rust bundler found: {bundler_status['location']}")
-            else:
-                print("Rust bundler not found - will run without asset bundling")
-        
         start_dev_server(verbose=verbose)
     else:
         logger.error("Development requirements not met")
-
-# Unit tests as comments:
-# 1. test_dev_server_startup() - verify all services start correctly
-# 2. test_dev_server_shutdown() - test graceful shutdown of all processes
-# 3. test_check_dev_requirements() - verify project structure validation
-# 4. test_bundler_detection() - test bundler binary detection
-# 5. test_fallback_mode() - test running without bundler
-# 6. test_verbose_mode() - test verbose vs quiet logging modes

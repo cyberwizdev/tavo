@@ -21,7 +21,7 @@ def get_bundler_path() -> Path:
         raise BundlerNotFound(f"Unsupported platform: {system}")
 
     bin_path = (
-        Path(__file__).parent.parent.parent.parent  # up from tavo/core/utils → project root
+        Path(__file__).parent.parent.parent  # up from tavo/core/utils → project root
         / "rust_bundler"
         / "target"
         / target

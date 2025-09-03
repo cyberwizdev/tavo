@@ -14,8 +14,8 @@ from starlette.routing import Route, Router, Match
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 from importlib import import_module
-import sys
 from .ssr import SSRRenderer
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -173,22 +173,51 @@ class FileBasedRouter:
 
     def _get_module_path(self, py_file: Path, routes_dir: Path) -> str:
         """Get the correct module path for importing."""
+        # Get the relative path from routes directory
         relative_path = py_file.relative_to(routes_dir).with_suffix("")
         
-        # Convert path separators to dots for module import
+        # Get the project root (parent of api directory)
+        api_dir = routes_dir.parent  # This should be the 'api' directory
+        project_root = api_dir.parent  # This should be 'new_app'
+        
+        # Add project root to Python path if not already there
+        project_root_str = str(project_root)
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+        
+        # Build the module path: api.routes.filename (without .py extension)
         module_parts = []
-        
-        # Start from the project root and build the full path
-        # Assuming the structure is: project_root/api/routes/...
-        if "api" in str(routes_dir):
-            module_parts.append("api")
-        elif "app" in str(routes_dir):
-            module_parts.append("app")
-        
-        module_parts.append("routes")
-        module_parts.extend(relative_path.parts)
+        module_parts.append(api_dir.name)  # 'api'
+        module_parts.append(routes_dir.name)  # 'routes'
+        module_parts.extend(relative_path.parts)  # subdirectories and filename
         
         return ".".join(module_parts)
+
+    def _import_route_module_safely(self, py_file: Path, routes_dir: Path):
+        """Safely import a route module with better error handling."""
+        try:
+            # Method 1: Try standard import
+            module_path = self._get_module_path(py_file, routes_dir)
+            return import_module(module_path)
+        except ImportError as e1:
+            self.logger.debug(f"Standard import failed for {py_file}: {e1}")
+            
+            try:
+                # Method 2: Try direct file loading
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    f"route_{py_file.stem}", py_file
+                )
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    return module
+            except Exception as e2:
+                self.logger.debug(f"Direct file loading failed for {py_file}: {e2}")
+                
+            # Re-raise the original import error
+            raise e1
+
 
     async def _discover_app_routes(self) -> None:
         """
