@@ -1,27 +1,27 @@
 use anyhow::Result;
+use std::io;
 use swc_core::{
     common::{
-        errors::{ColorConfig, Handler},
+        errors::Handler,
         sync::Lrc,
-        SourceMap, GLOBALS,
+        Mark, SourceMap, GLOBALS,
     },
     ecma::{
-        ast::*,
+        ast::{EsVersion, Program},
         codegen::{
             text_writer::JsWriter,
             Config as CodegenConfig, Emitter,
         },
-        parser::{lexer::Lexer, Parser, StringInput, Syntax, TsConfig},
+        parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax},
         transforms::{
-            base::{feature::FeatureFlag, resolver},
-            react::{react, Options as ReactOptions},
-            typescript::typescript,
+            base::resolver,
+            react::{react, Options as ReactOptions, Runtime},
+            typescript::{strip, Config},
         },
-        visit::FoldWith,
+        visit::{FoldWith, FoldPass},
     },
 };
-use swc_common::{BytePos, FileName, FilePathMapping, SourceFile};
-use std::path::Path;
+use swc_common::{FileName, FilePathMapping, SourceFile};
 use crate::cli::Args;
 
 pub struct TranspileOptions {
@@ -45,16 +45,11 @@ pub fn transpile_code(code: &str, args: &Args) -> Result<String> {
 pub fn transpile_with_options(code: &str, options: &TranspileOptions) -> Result<String> {
     GLOBALS.set(&Default::default(), || {
         let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
-        let handler = Handler::with_tty_emitter(
-            ColorConfig::Auto,
-            true,
-            false,
-            Some(cm.clone()),
-        );
+        let _handler = Handler::with_emitter_writer(Box::new(io::stderr()), Some(cm.clone()));
 
         let source_file = cm.new_source_file(
-            FileName::Custom("virtual_entry.tsx".into()),
-            code.into(),
+            Lrc::new(FileName::Custom("virtual_entry.tsx".into())),
+            code.to_string(),
         );
 
         let result = transpile_inner(source_file, options, cm.clone());
@@ -74,9 +69,12 @@ fn transpile_inner(
     options: &TranspileOptions,
     cm: Lrc<SourceMap>,
 ) -> Result<String> {
-    let syntax = Syntax::Typescript(TsConfig {
+    let unresolved_mark = Mark::fresh(Mark::root());
+    let top_level_mark = Mark::fresh(Mark::root());
+
+    let syntax = Syntax::Typescript(TsSyntax {
         tsx: options.jsx,
-        decorators: true,
+        decorators: false,
         dts: false,
         no_early_errors: false,
         disallow_ambiguous_jsx_like: false,
@@ -93,44 +91,49 @@ fn transpile_inner(
     let module = parser.parse_module()
         .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
 
+    let mut program = Program::Module(module);
+
     // Apply transformations
-    let module = module
-        .fold_with(&mut resolver(
-            Default::default(),
-            Default::default(),
-            false,
-        ))
-        .fold_with(&mut typescript::typescript(
-            Default::default(),
-            Default::default(),
-            cm.clone(),
-        ))
-        .fold_with(&mut react(
-            cm.clone(),
-            Some(&Default::default()),
-            ReactOptions {
-                development: false,
-                refresh: Default::default(),
-                import_source: Default::default(),
-                pragma: Default::default(),
-                pragma_frag: Default::default(),
-                throw_if_namespace: Default::default(),
-                runtime: Default::default(),
-                use_built_ins: Default::default(),
-                use_spread: Default::default(),
-                next: Default::default(),
-            },
-            Default::default(),
-            FeatureFlag::all(),
-        ));
+    program = program.fold_with(&mut resolver(unresolved_mark, top_level_mark, false));
+    program = program.fold_with(&mut strip(Config::default(), unresolved_mark, top_level_mark));
+    program = program.fold_with(&mut react(
+        cm.clone(),
+        None,
+        ReactOptions {
+            development: Some(false),
+            refresh: Default::default(),
+            import_source: Default::default(),
+            pragma: Default::default(),
+            pragma_frag: Default::default(),
+            throw_if_namespace: Default::default(),
+            runtime: Some(Runtime::Classic),
+            next: Default::default(),
+            use_builtins: None,
+            use_spread: None,
+        },
+        unresolved_mark,
+        top_level_mark,
+    ));
+
+    let module = match program {
+        Program::Module(m) => m,
+        _ => unreachable!(),
+    };
 
     // Generate code
     let mut buf = Vec::new();
+    let sourcemap_buf = if options.sourcemap { Some(Vec::new()) } else { None };
+    
+    let writer = match sourcemap_buf {
+        Some(mut sm_buf) => JsWriter::new(cm.clone(), "\n", &mut buf, Some(&mut sm_buf)),
+        None => JsWriter::new(cm.clone(), "\n", &mut buf, None),
+    };
+
     let mut emitter = Emitter {
         cfg: CodegenConfig::default().with_minify(options.minify),
         cm: cm.clone(),
         comments: None,
-        wr: JsWriter::new(cm, "\n", &mut buf, None),
+        wr: writer,
     };
 
     emitter.emit_module(&module)

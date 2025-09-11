@@ -50,12 +50,12 @@ async fn render_to_string_inner(
             const App = this.default || this.App;
             const params = {};
             const element = React.createElement(App, {{ params }});
-            ReactDOMServer.renderToString(element);
+            ReactDOMServer.renderToString(element); 
             "#,
             params_json
         );
         
-        let html: String = ctx.eval(&render_script)
+        let html: String = ctx.eval(render_script.into_bytes())
             .map_err(|e| anyhow!("SSR rendering failed: {}", e))?;
             
         Ok(html)
