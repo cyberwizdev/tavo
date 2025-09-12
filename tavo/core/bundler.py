@@ -1,221 +1,298 @@
-"""
-Tavo Bundler Integration
-
-Helpers to call the rust SWC bundler (build/watch/ssr) from Python.
-"""
-
 import subprocess
-import asyncio
-import logging
 import json
-import platform
+import tempfile
+import shutil
+import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
+class AppRouter:
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        # The render.js script will be in the `tavo` package, one level above `core`
+        self.render_js_path = Path(__file__).resolve().parent.parent / "render.js"
+        self.swc_binary = self._find_swc_binary()
 
-class BundlerError(Exception):
-    """Exception raised when bundler operations fail."""
-    pass
+    def _find_swc_binary(self) -> Optional[str]:
+        """Find SWC binary in common locations or PATH"""
+        possible_paths = [
+            "swc",  # In PATH
+            "./node_modules/.bin/swc",  # Local node_modules
+            str(self.project_root / "node_modules" / ".bin" / "swc"),  # Project node_modules
+        ]
+        
+        for path in possible_paths:
+            if shutil.which(path):
+                return path
+        
+        # Try to find platform-specific binary names
+        platform_binaries = ["swc-linux", "swc-darwin", "swc-win32.exe"]
+        for binary in platform_binaries:
+            if shutil.which(binary):
+                return binary
+        
+        return None
 
+    def resolve_import(self, content: str) -> str:
+        """
+        Resolve @/ imports in the file content to relative paths
+        """
+        # Simple regex replacement for @/ imports
+        import re
+        
+        def replace_import(match):
+            import_path = match.group(1)
+            if import_path.startswith("@/"):
+                # Convert @/components/Button to ../components/Button (adjust based on depth)
+                relative_path = import_path.replace("@/", "../")
+                return f'"{relative_path}"'
+            return f'"{import_path}"'
+        
+        # Replace both single and double quoted imports
+        content = re.sub(r'from\s+["\']([^"\']+)["\']', lambda m: f'from {replace_import(m)}', content)
+        content = re.sub(r'import\s+["\']([^"\']+)["\']', lambda m: f'import {replace_import(m)}', content)
+        
+        return content
 
-class BundlerNotFound(BundlerError):
-    """Raised when the Rust bundler binary cannot be found."""
-    pass
+    def build_component_tree(self, route: str) -> List[str]:
+        """
+        Build an ordered list of layout.tsx and page.tsx files for a given route.
+        """
+        segments = route.strip("/").split("/") if route != "/" else []
+        files = []
+        current_path = self.project_root / "app"
 
+        # 1. Root layout
+        root_layout = current_path / "layout.tsx"
+        if root_layout.exists():
+            files.append(str(root_layout))
 
-def get_bundler_path() -> Path:
-    """
-    Return the path to the Rust bundler binary for the current platform.
+        # 2. Nested layouts
+        for segment in segments:
+            current_path /= segment
+            nested_layout = current_path / "layout.tsx"
+            if nested_layout.exists():
+                files.append(str(nested_layout))
 
-    Raises:
-        BundlerNotFound: if the binary does not exist
-    """
-    system = platform.system().lower()
-    if system == "windows":
-        bin_name = "ssr-bundler.exe"
-        target = "x86_64-pc-windows-msvc"
-    elif system == "darwin":
-        bin_name = "ssr-bundler"
-        target = "x86_64-apple-darwin"
-    elif system == "linux":
-        bin_name = "ssr-bundler"
-        target = "x86_64-unknown-linux-gnu"
-    else:
-        raise BundlerNotFound(f"Unsupported platform: {system}")
-
-    bin_path = (
-        Path(__file__).parent.parent.parent  # up from tavo/core → project root
-        / "rust_bundler"
-        / "target"
-        / target
-        / "release"
-        / bin_name
-    )
-
-    if not bin_path.exists():
-        raise BundlerNotFound(f"Rust bundler not found at {bin_path}")
-
-    return bin_path
-
-
-async def build_production(
-    project_dir: Path,
-    output_dir: Path,
-    production: bool = True
-) -> Dict[str, Any]:
-    """
-    Build client and server bundles for production.
-    """
-    logger.info("Starting production build...")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = _build_bundler_command("build", project_dir, output_dir, production)
-
-    try:
-        result = await _run_bundler_command(cmd, project_dir)
-        manifest = _parse_build_output(result.stdout)
-
-        logger.info("✅ Production build completed")
-        return manifest
-
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Build failed: {e.stderr}")
-        raise BundlerError(f"Build process failed: {e}")
-
-
-async def start_watch_mode(project_dir: Path, hmr_port: int = 3001) -> Any:
-    """
-    Start bundler in watch mode for development.
-    """
-    logger.info("Starting bundler watch mode...")
-    cmd = _build_bundler_command("watch", project_dir, hmr_port=hmr_port)
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=project_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        logger.info("✅ Bundler watch mode started")
-        return process
-
-    except Exception as e:
-        logger.error(f"Failed to start watch mode: {e}")
-        raise BundlerError(f"Watch mode failed: {e}")
-
-
-async def render_ssr(route: str, props: Optional[Dict[str, Any]] = None) -> str:
-    """
-    Render a route server-side using the bundler.
-    """
-    logger.debug(f"Rendering SSR for route: {route}")
-    props_json = json.dumps(props or {})
-
-    try:
-        bundler = str(get_bundler_path())
-    except BundlerNotFound:
-        # Fallback mock implementation if bundler missing
-        return f"<html><body><h1>SSR: {route}</h1><script>window.__PROPS__ = {props_json}</script></body></html>"
-
-    cmd = [bundler, "ssr", "--route", route, "--props", props_json]
-    result = await _run_bundler_command(cmd, Path.cwd())
-    return result.stdout
-
-
-def _build_bundler_command(
-    command: str,
-    project_dir: Path,
-    output_dir: Optional[Path] = None,
-    production: bool = True,
-    hmr_port: Optional[int] = None
-) -> List[str]:
-    """Build command for rust bundler."""
-    bundler = str(get_bundler_path())
-    cmd = [bundler, command]
-
-    if command == "build" and output_dir:
-        cmd.extend(["--output", str(output_dir)])
-        if production:
-            cmd.append("--production")
-
-    if command == "watch" and hmr_port:
-        cmd.extend(["--hmr-port", str(hmr_port)])
-
-    return cmd
-
-
-async def _run_bundler_command(cmd: List[str], cwd: Path) -> subprocess.CompletedProcess:
-    """Run bundler command asynchronously."""
-    logger.debug(f"Running bundler: {' '.join(cmd)}")
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    stdout, stderr = await process.communicate()
-
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(
-            process.returncode, cmd, stdout, stderr  # type: ignore
-        )
-
-    return subprocess.CompletedProcess(
-        cmd, process.returncode, stdout.decode(), stderr.decode()
-    )
-
-
-def _parse_build_output(output: str) -> Dict[str, Any]:
-    """Parse bundler output to extract manifest."""
-    try:
-        # TODO: parse actual manifest from bundler stdout
-        return {
-            "client": {"entry": "client.js", "assets": ["client.js", "client.css"]},
-            "server": {"entry": "server.js"},
-            "routes": {},
-        }
-    except Exception as e:
-        logger.error(f"Failed to parse build output: {e}")
-        raise BundlerError(f"Invalid build output: {e}")
-
-
-def check_bundler_available() -> bool:
-    """Check if rust bundler binary exists for this platform."""
-    try:
-        _ = get_bundler_path()
-        return True
-    except BundlerNotFound:
-        return False
-
-
-def get_bundler_config(project_dir: Path) -> Dict[str, Any]:
-    """Load bundler configuration from project."""
-    config_file = project_dir / "tavo.config.json"
-    if config_file.exists():
-        with config_file.open() as f:
-            return json.load(f)
-
-    return {
-        "entry": {"client": "app/page.tsx", "server": "app/layout.tsx"},
-        "output": "dist",
-        "target": "es2020",
-    }
-
-
-if __name__ == "__main__":
-    async def main():
-        project_dir = Path.cwd()
-        if check_bundler_available():
-            print("✅ Rust bundler available")
-            output_dir = Path("dist")
-            manifest = await build_production(project_dir, output_dir)
-            print(f"Build manifest: {manifest}")
+        # 3. Page file
+        page_file = current_path / "page.tsx"
+        if page_file.exists():
+            files.append(str(page_file))
         else:
-            print("❌ Rust bundler not found")
+            # No page found
+            if not any(f.endswith("page.tsx") for f in files):
+                return []
 
-    asyncio.run(main())
+        return files
+
+    def compile_with_swc(self, files: List[str]) -> str:
+        """
+        Compile TSX files using SWC prebuilt binary
+        """
+        if not self.swc_binary:
+            raise RuntimeError("SWC binary not found. Please install SWC binary or add it to PATH")
+
+        compiled_modules = []
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            for i, file_path in enumerate(files):
+                file_path_obj = Path(file_path)
+                
+                # Read and resolve imports
+                content = file_path_obj.read_text()
+                resolved_content = self.resolve_import(content)
+                
+                # Write to temp file
+                temp_file = temp_path / f"component_{i}.tsx"
+                temp_file.write_text(resolved_content)
+                
+                # Compile with SWC
+                output_file = temp_path / f"component_{i}.js"
+                
+                swc_config = {
+                    "jsc": {
+                        "parser": {
+                            "syntax": "typescript",
+                            "tsx": True
+                        },
+                        "transform": {
+                            "react": {
+                                "runtime": "automatic"
+                            }
+                        },
+                        "target": "es2022"
+                    },
+                    "module": {
+                        "type": "es6"
+                    }
+                }
+                
+                config_file = temp_path / "swc_config.json"
+                config_file.write_text(json.dumps(swc_config))
+                
+                cmd = [
+                    self.swc_binary,
+                    str(temp_file),
+                    "-o", str(output_file),
+                    "--config-file", str(config_file)
+                ]
+                
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        cwd=self.project_root
+                    )
+                    
+                    # Read compiled output
+                    if output_file.exists():
+                        compiled_content = output_file.read_text()
+                        # Export with unique names
+                        export_name = f"Layout{i}" if i < len(files) - 1 else "Page"
+                        compiled_modules.append(f"const {export_name} = {compiled_content.replace('export default', '').strip()};")
+                    
+                except subprocess.CalledProcessError as e:
+                    error_message = f"SWC compilation failed for {file_path}.\nStdout:\n{e.stdout}\nStderr:\n{e.stderr}"
+                    raise RuntimeError(error_message) from e
+        
+        return "\n".join(compiled_modules)
+
+    def render_with_node(self, compiled_js: str, num_layouts: int) -> str:
+        """
+        Use Node.js to render the React components to HTML
+        """
+        if not self.render_js_path.exists():
+            raise FileNotFoundError(f"Render script not found at {self.render_js_path}")
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            # Write the compiled components and render logic
+            render_script = f"""
+import React from 'react';
+import {{ renderToString }} from 'react-dom/server';
+
+{compiled_js}
+
+// Generate nested React tree
+function generateReactTree() {{
+    let tree = React.createElement(Page);
+    for (let i = {num_layouts - 1}; i >= 0; i--) {{
+        const Layout = eval(`Layout${{i}}`);
+        tree = React.createElement(Layout, null, tree);
+    }}
+    return tree;
+}}
+
+const html = renderToString(generateReactTree());
+console.log(html);
+"""
+            f.write(render_script)
+            temp_script_path = f.name
+
+        try:
+            cmd = ["node", temp_script_path]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=self.project_root
+            )
+            return result.stdout.strip()
+            
+        except subprocess.CalledProcessError as e:
+            error_message = f"Node rendering failed.\nStdout:\n{e.stdout}\nStderr:\n{e.stderr}"
+            raise RuntimeError(error_message) from e
+        finally:
+            # Clean up temp file
+            Path(temp_script_path).unlink(missing_ok=True)
+
+    def generate_hydration_script(self, compiled_js: str, num_layouts: int) -> str:
+        """
+        Generate the client-side hydration script
+        """
+        return f"""
+import React from "react";
+import ReactDOM from "react-dom/client";
+
+{compiled_js}
+
+// Generate nested React tree for hydration
+function generateReactTree() {{
+    let tree = React.createElement(Page);
+    for (let i = {num_layouts - 1}; i >= 0; i--) {{
+        const Layout = eval(`Layout${{i}}`);
+        tree = React.createElement(Layout, null, tree);
+    }}
+    return tree;
+}}
+
+ReactDOM.hydrateRoot(
+    document.getElementById('root'),
+    generateReactTree()
+);
+"""
+
+    def render_route(self, route: str) -> Tuple[str, int]:
+        """
+        Complete rendering pipeline: find files, compile, render, and return HTML
+        """
+        logger.debug(f"Starting render_route for: {route}")
+        component_files = self.build_component_tree(route)
+        logger.debug(f"Component files found: {component_files}")
+
+        if not component_files:
+            logger.debug("No component files found, returning 404")
+            return "404 Not Found - No page.tsx found for this route", 404
+            
+        if not component_files[-1].endswith("page.tsx"):
+            logger.debug("Last file is not page.tsx, returning 404")
+            return "404 Not Found - No page.tsx found for this route", 404
+
+        num_layouts = len(component_files) - 1
+        logger.debug(f"Number of layouts: {num_layouts}")
+        
+        try:
+            # Compile components
+            logger.debug("Starting compilation...")
+            compiled_js = self.compile_with_swc(component_files)
+            logger.debug("Compilation successful")
+            
+            # Server-side render
+            logger.debug("Starting server-side render...")
+            rendered_html = self.render_with_node(compiled_js, num_layouts)
+            logger.debug(f"Server-side render successful: {rendered_html[:100]}...")
+            
+            # Generate hydration script
+            logger.debug("Generating hydration script...")
+            hydration_script = self.generate_hydration_script(compiled_js, num_layouts)
+            
+            # Combine into final HTML
+            html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Tavo App</title>
+</head>
+<body>
+    <div id="root">{rendered_html}</div>
+    <script type="module">
+        {hydration_script}
+    </script>
+</body>
+</html>'''
+            
+            logger.debug("Route rendering completed successfully")
+            return html, 200
+            
+        except Exception as e:
+            logger.error(f"Error rendering route '{route}': {str(e)}", exc_info=True)
+            # In development, you might want to show the error
+            # In production, return a 500 error page
+            return f"500 Internal Server Error: {str(e)}", 500
