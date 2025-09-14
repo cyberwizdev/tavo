@@ -270,23 +270,39 @@ class DevServer:
         Returns:
             Path to the page file if it exists, None otherwise
         """
+        logger.debug(f"Checking page file path for route: {path}")
+        logger.debug(f"App directory: {self.app_dir}")
+        logger.debug(f"App directory exists: {self.app_dir.exists()}")
+        
         if not self.app_dir.exists():
+            logger.debug("App directory does not exist")
             return None
+        
+        # List contents of app directory for debugging
+        if self.app_dir.exists():
+            app_contents = list(self.app_dir.iterdir())
+            logger.debug(f"App directory contents: {[f.name for f in app_contents]}")
         
         # Normalize path
         clean_path = path.strip('/')
+        logger.debug(f"Clean path: '{clean_path}'")
         
         # Handle root path
         if not clean_path:
             # Check for app/page.tsx or app/page.jsx
             for filename in ['page.tsx', 'page.jsx']:
                 page_file = self.app_dir / filename
+                logger.debug(f"Checking root page file: {page_file}")
+                logger.debug(f"Root page file exists: {page_file.exists()}")
                 if page_file.exists():
+                    logger.debug(f"Found root page file: {page_file}")
                     return page_file
+            logger.debug("No root page file found")
             return None
         
         # Handle nested paths (e.g., "/about" -> "app/about/page.tsx")
         path_parts = clean_path.split('/')
+        logger.debug(f"Path parts: {path_parts}")
         
         # Only check for page.tsx and page.jsx in the directory structure
         for extension in ['tsx', 'jsx']:
@@ -295,9 +311,13 @@ class DevServer:
                 page_file = page_file / part
             page_file = page_file / f'page.{extension}'
             
+            logger.debug(f"Checking nested page file: {page_file}")
+            logger.debug(f"Nested page file exists: {page_file.exists()}")
             if page_file.exists():
+                logger.debug(f"Found nested page file: {page_file}")
                 return page_file
         
+        logger.debug("No page file found for path")
         return None
 
     def _get_not_found_html(self, path: str = "/") -> str:
