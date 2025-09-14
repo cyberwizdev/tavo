@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tavo"
 version = "0.1.0"
-description = "🚀 Modern full-stack framework CLI with Python backend, Rust+SWC powered SSR for React, and HMR"
+description = "🚀 Modern full-stack framework CLI with Python backend, SWC powered SSR for React, and HMR"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-    {name = "CyberwizDev", email = "cyberwizdev@example.com"},
+    {name = "CyberwizDev", email = "team@cyberwizdev.com.ng"},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,7 +22,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Rust",
     "Framework :: AsyncIO",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
@@ -40,8 +39,7 @@ keywords = [
     "starlette", 
     "react", 
     "ssr", 
-    "hmr", 
-    "rust", 
+    "hmr",
     "swc", 
     "bundler", 
     "scaffolding",
