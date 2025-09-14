@@ -1,5 +1,5 @@
 """
-Hello API Route
+Users API Route
 
 Example API route that returns JSON (Starlette-compatible).
 """
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
  
 async def get(request: Request) -> JSONResponse:
     """
-    Handle GET requests to /api/hello.
+    Handle GET requests to /api/v1/users.
     
     Args:
         request: Starlette request object
@@ -25,7 +25,7 @@ async def get(request: Request) -> JSONResponse:
         JSON response with greeting message
         
     Example:
-        GET /api/hello -> {"message": "Hello from Tavo!", "timestamp": "..."}
+        GET /api/v1/users -> {"message": "Hello from Tavo!", "timestamp": "..."}
     """
     logger.info("Hello API endpoint called")
     
@@ -44,7 +44,7 @@ async def get(request: Request) -> JSONResponse:
 
 async def post(request: Request) -> JSONResponse:
     """
-    Handle POST requests to /api/hello.
+    Handle POST requests to /api/v1/users.
     
     Args:
         request: Starlette request object
@@ -87,7 +87,7 @@ async def post(request: Request) -> JSONResponse:
 
 async def put(request: Request) -> JSONResponse:
     """
-    Handle PUT requests to /api/hello.
+    Handle PUT requests to /api/v1/users.
     
     Args:
         request: Starlette request object
@@ -116,7 +116,7 @@ async def put(request: Request) -> JSONResponse:
 
 async def delete(request: Request) -> JSONResponse:
     """
-    Handle DELETE requests to /api/hello.
+    Handle DELETE requests to /api/v1/users.
     
     Args:
         request: Starlette request object

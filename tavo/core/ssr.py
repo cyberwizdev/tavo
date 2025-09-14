@@ -22,9 +22,15 @@ class SSRRenderer:
         Initialize SSR renderer.
 
         Args:
-            app_dir: Directory containing the Tavo project (defaults to current working directory).
+            app_dir: Directory containing the React app components (defaults to cwd/app).
         """
-        project_root = app_dir or Path.cwd()
+        if app_dir:
+            # If app_dir is provided, the project root is its parent
+            project_root = app_dir.parent
+        else:
+            # Default to current working directory as project root
+            project_root = Path.cwd()
+        
         self.router = AppRouter(project_root=project_root)
 
     async def render_route(

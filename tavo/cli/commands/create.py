@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional
 import json
 import importlib.resources as resources
 
+from ..core.bundler import SWCInstaller
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +48,9 @@ def create_project(target_dir: Path, template: str = "default") -> None:
     # Replace tokens in files
     project_name = target_dir.name
     _replace_tokens(target_dir, {"PROJECT_NAME": project_name})
+    
+    # Install SWC globally for the project
+    _install_swc_dependencies()
     
     logger.info(f"Created project '{project_name}' in {target_dir}")
 
@@ -122,6 +127,24 @@ def _replace_tokens(target_dir: Path, tokens: Dict[str, str]) -> None:
                 logger.warning(f"Skipping binary file: {file_path}")
             except Exception as e:
                 logger.error(f"Failed to process {file_path}: {e}")
+
+
+def _install_swc_dependencies() -> None:
+    """
+    Install SWC CLI and Core globally for the framework.
+    """
+    installer = SWCInstaller()
+    
+    logger.info("Checking SWC installation...")
+    if installer.is_swc_installed():
+        logger.info("SWC is already installed")
+        return
+    
+    logger.info("Installing SWC CLI and Core globally...")
+    if installer.install_swc_globally():
+        logger.info("SWC installed successfully")
+    else:
+        logger.warning("Failed to install SWC. You may need to install it manually: npm install -g @swc/cli @swc/core")
 
 
 def get_available_templates() -> list[str]:
