@@ -44,7 +44,7 @@ pip install -e .
 ### 1. Create a new project
 
 ```bash
-tavo new myapp
+tavo create myapp
 ```
 
 This sets up a project with:
