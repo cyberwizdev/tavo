@@ -4,7 +4,7 @@
 
 - ⚡ **Python** backend (FastAPI/Starlette base)  
 - 🦀 **Rust + SWC** powered SSR for React (with App Router support)  
-- 🔥 **Client hydration & HMR** with no Node.js required  
+- 🔥 **Client hydration & HMR** with no Node.js runtime required  
 - 🛠️ CLI scaffolding for apps, routes, components, and APIs  
 
 Think of it as **Laravel Breeze + React + Python** but lighter, faster, and developer-friendly.
@@ -14,7 +14,7 @@ Think of it as **Laravel Breeze + React + Python** but lighter, faster, and deve
 ## ✨ Features
 
 - **SSR with React App Router** (layouts, nested routes, `use client`)  
-- **Hydration scripts compiled with SWC** (no Node.js needed)  
+- **Hydration scripts compiled with SWC** (no Node.js runtime needed)  
 - **File-based routing** for both backend and frontend  
 - **Hot Module Replacement (HMR)** via inline WebSocket  
 - **One CLI (`tavo`) to rule them all** — scaffold projects, run dev server, and build  
@@ -35,6 +35,28 @@ Or from source:
 git clone https://github.com/cyberwizdev/tavo
 cd tavo
 pip install -e .
+```
+
+---
+
+## ⚡ Requirements
+
+Tavo itself does **not** depend on Node.js for SSR/runtime.
+However, two things make **npm** required:
+
+1. **Frontend ecosystem:** Tavo projects use **React** and npm packages from the Node.js ecosystem.
+2. **SWC binary:** Tavo’s compiler installs the SWC binary globally using `npm` during setup.
+
+So you’ll need:
+
+* **Python 3.10+**
+* **Node.js (LTS) + npm** (npm is mandatory since SWC uses it for global install)
+
+On Linux:
+
+```bash
+# Example (Debian/Ubuntu)
+sudo apt install nodejs npm python3-venv
 ```
 
 ---
@@ -97,7 +119,7 @@ myapp/
 │   └── routes/
 │── public/               # Static assets
 │── templates/            # Scaffolding templates
-│── package.json          # For frontend deps (optional, only if needed)
+│── package.json          # For frontend deps (managed with npm)
 │── pyproject.toml        # Python project config
 │── tavo.config.json      # Tavo project config
 ```

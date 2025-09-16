@@ -9,7 +9,6 @@ import tempfile
 import subprocess
 import os
 import re
-import json
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 
@@ -90,7 +89,7 @@ function renderApp() {{
         return renderToString(element);
     }} catch (error) {{
         console.error('Component render error:', error.message);
-        return `<div class="error">Component Error: ${{error.message}}</div>`;
+        return `<div class="error">Component Error: ${{error}}</div>`;
     }}
 }}
 
@@ -310,6 +309,8 @@ class AppRouter:
 </head>
 <body>
     <div id="root">{rendered_content}</div>
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
     <script type="module">{hydration_script}</script>
 </body>
 </html>'''
