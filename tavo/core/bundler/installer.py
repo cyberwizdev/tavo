@@ -23,18 +23,12 @@ class SWCInstaller:
         """Check if npm is available in the system"""
         return shutil.which("npm") is not None
     
-    def is_npx_available(self) -> bool:
-        """Check if npx is available in the system"""
-        return shutil.which("npx") is not None
-    
     def is_swc_installed(self) -> bool:
         """Check if SWC CLI is globally installed and accessible"""
-        if not self.is_npx_available():
-            return False
-        
+
         try:
             result = subprocess.run(
-                ["npx", "@swc/cli", "--version"],
+                ["swc", "--version"],
                 capture_output=True,
                 text=True,
                 shell=True,
@@ -89,5 +83,13 @@ class SWCInstaller:
     def get_swc_command(self) -> Optional[str]:
         """Get the appropriate SWC command to use"""
         if self.is_swc_installed():
-            return "npx @swc/cli"
+            return "swc"
         return None
+
+
+if __name__ == "__main__":
+    installer = SWCInstaller()
+    if installer.ensure_swc_available():
+        print("SWC is ready to use.")
+    else:
+        print("Failed to ensure SWC is available.")

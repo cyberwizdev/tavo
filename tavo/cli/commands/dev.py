@@ -81,7 +81,6 @@ class DevServer:
             # Start services
             await self._start_hmr_server()
             await self._start_file_watcher()
-            await self._verify_bundler()
             
             # Start the ASGI server
             await self._start_integrated_server()
@@ -511,17 +510,7 @@ class DevServer:
             return True
         except BundlerNotFound:
             return False
-    
-    async def _verify_bundler(self) -> None:
-        """Verify bundler availability."""
-        bundler_available = self._check_bundler_available()
-        
-        if bundler_available:
-            bundler_path = get_bundler_path()
-            logger.info(f"Rust bundler available at: {bundler_path}")
-        else:
-            logger.warning("Rust bundler not found - using fallback HTML for SSR routes")
-    
+      
     async def _start_integrated_server(self) -> None:
         """Start the integrated ASGI server."""
         if not self.app:

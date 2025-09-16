@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import Hello from './components/Hello';
+// import Hello from './components/Hello';
 
 interface HomePageProps {
   initialData?: {
@@ -86,7 +86,7 @@ export default function HomePage({ initialData }: HomePageProps) {
           {/* Hello Component */}
           <div className="demo-card">
             <h3>Component Demo</h3>
-            <Hello name="Tavo Developer" />
+            {/* <Hello name="Tavo Developer" /> */}
           </div>
           
           {/* API Demo */}

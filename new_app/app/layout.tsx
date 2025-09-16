@@ -1,39 +1,35 @@
 /**
  * Root Layout Component
- * 
+ *
  * Root layout for React app with head tags and body wrapper.
  */
 
-import React from 'react';
+import React from "react";
 
 interface LayoutProps {
   children: React.ReactNode;
-  title?: string;
-  description?: string;
 }
 
-export default function RootLayout({ 
-  children, 
-  title = "Tavo App",
-  description = "Full-stack React app with Python backend" 
-}: LayoutProps) {
+export default function RootLayout({ children }: LayoutProps) {
   return (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{title}</title>
-        <meta name="description" content={description} />
-        
         {/* Favicon */}
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-        
+
         {/* Preload critical resources */}
-        <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-        
+        <link
+          rel="preload"
+          href="/fonts/inter.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+
         {/* Global styles */}
-        <style dangerouslySetInnerHTML={{
-          __html: `
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
             * {
               box-sizing: border-box;
               margin: 0;
@@ -52,10 +48,11 @@ export default function RootLayout({
               display: flex;
               flex-direction: column;
             }
-          `
-        }} />
+          `,
+          }}
+        />
       </head>
-      
+
       <body>
         <div id="root">
           {/* Navigation */}
@@ -64,31 +61,38 @@ export default function RootLayout({
               <a href="/" className="nav-brand">
                 Tavo
               </a>
-              
+
               <div className="nav-links">
-                <a href="/" className="nav-link">Home</a>
-                <a href="/about" className="nav-link">About</a>
-                <a href="/api/hello" className="nav-link">API</a>
+                <a href="/" className="nav-link">
+                  Home
+                </a>
+                <a href="/about" className="nav-link">
+                  About
+                </a>
+                <a href="/api/hello" className="nav-link">
+                  API
+                </a>
               </div>
             </div>
           </nav>
-          
+
           {/* Main content */}
-          <main className="main-content">
-            {children}
-          </main>
-          
+          <main className="main-content">{children}</main>
+
           {/* Footer */}
           <footer className="footer">
             <div className="footer-container">
-              <p>&copy; 2025 Tavo Framework. Built with Python + Rust + React.</p>
+              <p>
+                &copy; 2025 Tavo Framework. Built with Python + Rust + React.
+              </p>
             </div>
           </footer>
         </div>
-        
+
         {/* Navigation styles */}
-        <style dangerouslySetInnerHTML={{
-          __html: `
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
             .navbar {
               background: #fff;
               border-bottom: 1px solid #e5e7eb;
@@ -166,32 +170,33 @@ export default function RootLayout({
                 padding: 1rem;
               }
             }
-          `
-        }} />
+          `,
+          }}
+        />
       </body>
     </html>
   );
 }
 
 // Type definitions for better TypeScript support
-export interface PageProps {
-  params?: Record<string, string>;
-  searchParams?: Record<string, string>;
-}
+// export interface PageProps {
+//   params?: Record<string, string>;
+//   searchParams?: Record<string, string>;
+// }
 
-export interface LayoutContext {
-  pathname: string;
-  query: Record<string, string>;
-  user?: {
-    id: number;
-    name: string;
-    email: string;
-  };
-}
+// export interface LayoutContext {
+//   pathname: string;
+//   query: Record<string, string>;
+//   user?: {
+//     id: number;
+//     name: string;
+//     email: string;
+//   };
+// }
 
-/*
-Unit tests as comments:
-1. test_layout_renders_children() - verify children are rendered correctly
-2. test_layout_title_prop() - test custom title prop is applied
-3. test_responsive_navigation() - verify navigation works on mobile devices
-*/
+// /*
+// Unit tests as comments:
+// 1. test_layout_renders_children() - verify children are rendered correctly
+// 2. test_layout_title_prop() - test custom title prop is applied
+// 3. test_responsive_navigation() - verify navigation works on mobile devices
+// */

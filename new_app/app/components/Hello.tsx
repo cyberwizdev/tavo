@@ -4,7 +4,7 @@
  * Small working React component to import into pages.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 interface HelloProps {
   name?: string;

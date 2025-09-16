@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import json
 import importlib.resources as resources
 
-from ..core.bundler import SWCInstaller
+from tavo.core.bundler import SWCInstaller
 
 logger = logging.getLogger(__name__)
 
