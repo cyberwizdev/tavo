@@ -125,7 +125,7 @@ class DevServer:
         logger.info("Setting up application routing...")
         
         # Initialize SSR renderer
-        self.ssr_renderer = SSRRenderer(app_dir=self.app_dir)
+        self.ssr_renderer = SSRRenderer(project_root=self.project_root)
         
         # Initialize routers
         self.api_router = FileBasedRouter(self.api_dir, prefix="/api")
@@ -233,16 +233,18 @@ class DevServer:
             route_match = self.app_router.match_route(path) if self.app_router else None
             
             # Prepare SSR context
-            ssr_context = {
-                "url": str(request.url),
-                "method": request.method,
-                "headers": dict(request.headers),
-                "query_params": dict(request.query_params),
-                "route_params": route_match.params if route_match else {},
-                "development": True,
-                "hmr_port": self.port + 1 if self.reload else None,
-                "page_file": str(page_file_path),
-            }
+            # ssr_context = {
+            #     "url": str(request.url),
+            #     "method": request.method,
+            #     "headers": dict(request.headers),
+            #     "query_params": dict(request.query_params),
+            #     "route_params": route_match.params if route_match else {},
+            #     "development": True,
+            #     "hmr_port": self.port + 1 if self.reload else None,
+            #     "page_file": str(page_file_path),
+            # }
+
+            ssr_context = None
             
             # Render the route
             if self.ssr_renderer:

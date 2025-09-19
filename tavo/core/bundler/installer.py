@@ -1,95 +1,125 @@
 """
-SWC Installation Manager
-
-Handles global installation of @swc/cli and @swc/core packages.
+SWC Installation and availability checking utilities
 """
 
 import subprocess
-import logging
 import shutil
-from pathlib import Path
+import os
+import logging
 from typing import Optional
+from pathlib import Path
+
+from .constants import DEFAULT_SWC_COMMAND
 
 logger = logging.getLogger(__name__)
 
 
 class SWCInstaller:
-    """Manages SWC installation and verification"""
+    """Manages SWC CLI installation and availability"""
     
     def __init__(self):
-        self.required_packages = ["@swc/cli", "@swc/core"]
+        self._swc_command: Optional[str] = None
+        self._swc_available: Optional[bool] = None
+        self._version_cache: Optional[str] = None
     
-    def is_npm_available(self) -> bool:
-        """Check if npm is available in the system"""
-        return shutil.which("npm") is not None
-    
-    def is_swc_installed(self) -> bool:
-        """Check if SWC CLI is globally installed and accessible"""
-
-        try:
-            result = subprocess.run(
-                ["swc", "--version"],
-                capture_output=True,
-                text=True,
-                shell=True,
-                timeout=10
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
-    
-    def install_swc_globally(self) -> bool:
-        """Install SWC CLI and Core globally using npm"""
-        if not self.is_npm_available():
-            logger.error("npm is not available. Please install Node.js and npm first.")
-            return False
+    def get_swc_command(self) -> str:
+        """
+        Get the SWC command to use
         
-        logger.info("Installing SWC CLI and Core globally...")
-        
-        try:
-            # Install both packages globally
-            cmd = ["npm", "install", "-g"] + self.required_packages
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                shell=True,
-                timeout=120  # 2 minutes timeout for installation
-            )
-            
-            if result.returncode == 0:
-                logger.info("SWC installed successfully")
-                return True
+        Returns:
+            SWC command path or name
+        """
+        if self._swc_command is None:
+            # Check environment variable first
+            env_command = os.getenv("TAVO_SWC_CMD")
+            if env_command:
+                self._swc_command = env_command
             else:
-                logger.error(f"SWC installation failed: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            logger.error("SWC installation timed out")
-            return False
-        except Exception as e:
-            logger.error(f"Error installing SWC: {e}")
-            return False
+                # Look for swc in PATH
+                swc_path = shutil.which("swc")
+                if swc_path:
+                    self._swc_command = swc_path
+                else:
+                    self._swc_command = DEFAULT_SWC_COMMAND
+        
+        return self._swc_command
     
     def ensure_swc_available(self) -> bool:
-        """Ensure SWC is available, install if necessary"""
-        if self.is_swc_installed():
-            logger.info("SWC is already installed and available")
-            return True
+        """
+        Check if SWC is available and working
         
-        logger.info("SWC not found, attempting to install...")
-        return self.install_swc_globally()
+        Returns:
+            True if SWC is available, False otherwise
+        """
+        if self._swc_available is not None:
+            return self._swc_available
+        
+        swc_command = self.get_swc_command()
+        
+        try:
+            result = subprocess.run(
+                [swc_command, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True
+            )
+            
+            version_output = result.stdout.strip()
+            self._version_cache = version_output
+            self._swc_available = True
+            
+            logger.debug(f"SWC is available: {version_output}")
+            return True
+            
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error(f"SWC is not available: {e}")
+            self._swc_available = False
+            return False
     
-    def get_swc_command(self) -> Optional[str]:
-        """Get the appropriate SWC command to use"""
-        if self.is_swc_installed():
-            return "swc"
+    def get_version(self) -> Optional[str]:
+        """
+        Get SWC version if available
+        
+        Returns:
+            Version string or None if not available
+        """
+        if self.ensure_swc_available():
+            return self._version_cache
         return None
+    
+    def get_installation_instructions(self) -> str:
+        """
+        Get instructions for installing SWC
+        
+        Returns:
+            Installation instructions as string
+        """
+        return """
+SWC is not installed or not available in PATH.
 
+To install SWC globally using npm:
+    npm install -g @swc/cli @swc/core
 
-if __name__ == "__main__":
-    installer = SWCInstaller()
-    if installer.ensure_swc_available():
-        print("SWC is ready to use.")
-    else:
-        print("Failed to ensure SWC is available.")
+To install SWC using yarn:
+    yarn global add @swc/cli @swc/core
+
+To install SWC using pnpm:
+    pnpm add -g @swc/cli @swc/core
+
+Alternative: Set TAVO_SWC_CMD environment variable to point to your SWC binary:
+    export TAVO_SWC_CMD=/path/to/swc
+
+For more information, visit: https://swc.rs/docs/usage/cli
+""".strip()
+    
+    def check_and_raise_if_unavailable(self) -> None:
+        """
+        Check SWC availability and raise error with instructions if not available
+        
+        Raises:
+            RuntimeError: If SWC is not available
+        """
+        if not self.ensure_swc_available():
+            error_msg = f"SWC is required but not available.\n\n{self.get_installation_instructions()}"
+            raise RuntimeError(error_msg)

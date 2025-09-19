@@ -1,512 +1,486 @@
 """
-Import Resolver
-
-Handles resolution of relative imports, @/ aliases, and bundling multiple files
-into a single compilation unit for SWC with proper layout composition and
-advanced import deduplication.
+App Router file resolution and import path handling
 """
 
 import re
 import logging
 from pathlib import Path
-from typing import Dict, List, Set, Optional, Tuple
-from .deduplicator import ImportDeduplicator
+from typing import List, Dict, Optional, Set, Tuple
+from dataclasses import dataclass
+from collections import defaultdict
+
+from .constants import (
+    APP_DIR_NAME, LAYOUT_FILES, PAGE_FILES, LOADING_FILES, 
+    HEAD_FILES, ROUTE_FILES, DYNAMIC_ROUTE_PATTERN, 
+    CATCH_ALL_ROUTE_PATTERN, SUPPORTED_EXTENSIONS
+)
+from .utils import normalize_path, read_file
 
 logger = logging.getLogger(__name__)
 
-try:
-    import esprima
-    HAS_ESPRIMA = True
-except ImportError:
-    HAS_ESPRIMA = False
+
+@dataclass
+class RouteNode:
+    """Represents a single route in the App Router tree"""
+    path: str
+    file_path: Optional[Path]
+    route_type: str  # 'layout', 'page', 'loading', 'head', 'route'
+    children: List['RouteNode']
+    route_segment: str
+    is_dynamic: bool = False
+    is_catch_all: bool = False
+
+
+@dataclass 
+class RouteEntry:
+    """Complete route entry with all associated files"""
+    route_path: str
+    layout_chain: List[Path]  # Outermost to innermost
+    page_file: Optional[Path]
+    loading_file: Optional[Path]
+    head_file: Optional[Path]
+    route_file: Optional[Path]
+    all_files: Set[Path]
+
 
 class ImportResolver:
-    """Resolves and bundles imports for SWC compilation"""
+    """Resolves imports and creates bundled files for SWC compilation"""
     
     def __init__(self, project_root: Path):
-        self.project_root = project_root
-        self.app_dir = project_root / "app"
-        self.components_dir = project_root / "components"
-        self.resolved_cache: Dict[str, Dict] = {}
-        self.dependency_graph: Dict[str, List[str]] = {}
-        self.deduplicator = ImportDeduplicator(project_root)
-    
-    def resolve_file_path(self, import_path: str, current_file: Path) -> Optional[Path]:
-        """Resolve import path to actual file path"""
-        if import_path.startswith('./') or import_path.startswith('../'):
-            resolved = (current_file.parent / import_path).resolve()
-        elif import_path.startswith('@/'):
-            resolved = self.project_root / import_path[2:]
-        elif import_path.startswith('app/'):
-            resolved = self.project_root / import_path
-        elif import_path.startswith('components/'):
-            resolved = self.project_root / import_path
-        else:
-            return None
-        
-        extensions = ['.tsx', '.ts', '.jsx', '.js']
-        
-        if resolved.suffix in extensions and resolved.exists():
-            return resolved
-        
-        for ext in extensions:
-            candidate = resolved.with_suffix(ext)
-            if candidate.exists():
-                return candidate
-        
-        if resolved.is_dir():
-            for ext in extensions:
-                index_file = resolved / f"index{ext}"
-                if index_file.exists():
-                    return index_file
-        
-        return None
-    
-    def parse_file(self, file_path: Path) -> Dict:
-        """Parse a single file and extract its components"""
-        file_str = str(file_path)
-        
-        if file_str in self.resolved_cache:
-            return self.resolved_cache[file_str]
-        
-        try:
-            content = file_path.read_text(encoding='utf-8')
-        except Exception as e:
-            logger.error(f"Error reading file {file_path}: {e}")
-            return {'imports': [], 'exports': [], 'content': '', 'local_deps': [], 'component_info': {}}
-        
-        imports, exports, main_content = self._extract_statements(content)
-        local_deps = self._find_local_dependencies(imports, file_path)
-        component_info = self._analyze_component(main_content, file_path)
-        
-        result = {
-            'imports': imports,
-            'exports': exports, 
-            'content': main_content,
-            'local_deps': local_deps,
-            'file_path': file_str,
-            'component_info': component_info
+        self.project_root = Path(project_root).resolve()
+        self.app_dir = self.project_root / APP_DIR_NAME
+        self._route_cache: Optional[List[RouteEntry]] = None
+        self._import_aliases = {
+            "@/": str(self.project_root / ""),
+            "~/": str(self.project_root / ""),
+            "components/": str(self.project_root / "components" / ""),
+            "app/": str(self.app_dir / ""),
         }
-        
-        self.resolved_cache[file_str] = result
-        self.dependency_graph[file_str] = local_deps
-        
-        return result
     
-    def _analyze_component(self, content: str, file_path: Path) -> Dict:
-        """Analyze component type and properties"""
-        file_name = file_path.name
-        component_info = {
-            'is_layout': 'layout.' in file_name,
-            'is_page': 'page.' in file_name,
-            'component_name': self._extract_component_name(content),
-            'has_children_prop': 'children' in content and ('ReactNode' in content or 'React.ReactNode' in content)
-        }
-        return component_info
-    
-    def _extract_component_name(self, content: str) -> Optional[str]:
-        """Extract the main component name from file content"""
-        # Try to find export default function Name
-        match = re.search(r'export\s+default\s+function\s+(\w+)', content)
-        if match:
-            return match.group(1)
+    def resolve_routes(self) -> List[RouteEntry]:
+        """
+        Resolve all routes from the app directory
         
-        # Try to find const Name = () => or const Name: FC
-        match = re.search(r'const\s+(\w+)(?:\s*:\s*\w+)?\s*=\s*\(', content)
-        if match:
-            return match.group(1)
+        Returns:
+            List of RouteEntry objects representing all routes
+        """
+        if self._route_cache is not None:
+            return self._route_cache
         
-        # Try to find export default Name
-        match = re.search(r'export\s+default\s+(\w+)', content)
-        if match:
-            return match.group(1)
+        if not self.app_dir.exists():
+            logger.warning(f"App directory not found: {self.app_dir}")
+            return []
         
-        return None
+        # Build route tree
+        route_tree = self._build_route_tree()
+        
+        # Convert tree to flat route entries
+        route_entries = self._tree_to_entries(route_tree)
+        
+        # Sort routes for consistent ordering
+        route_entries.sort(key=lambda x: (x.route_path.count('/'), x.route_path))
+        
+        self._route_cache = route_entries
+        logger.info(f"Resolved {len(route_entries)} routes")
+        
+        return route_entries
     
-    def _extract_statements(self, content: str) -> Tuple[List[str], List[str], str]:
-        """Extract import/export statements from content using AST parsing"""
-        if HAS_ESPRIMA:
-            return self._extract_statements_ast(content)
-        else:
-            return self._extract_statements_fallback(content)
+    def _build_route_tree(self) -> List[RouteNode]:
+        """Build route tree from filesystem"""
+        routes = []
+        
+        # Start from app directory
+        for item in sorted(self.app_dir.iterdir()):
+            if item.is_dir():
+                route_node = self._process_route_directory(item, "")
+                if route_node:
+                    routes.append(route_node)
+            elif item.name in PAGE_FILES:
+                # Root page
+                root_node = RouteNode(
+                    path="/",
+                    file_path=item,
+                    route_type="page",
+                    children=[],
+                    route_segment="",
+                    is_dynamic=False
+                )
+                routes.append(root_node)
+        
+        # Also check for root layout and other files
+        for file_type, file_names in [
+            ("layout", LAYOUT_FILES),
+            ("loading", LOADING_FILES), 
+            ("head", HEAD_FILES),
+            ("route", ROUTE_FILES)
+        ]:
+            for file_name in file_names:
+                root_file = self.app_dir / file_name
+                if root_file.exists():
+                    node = RouteNode(
+                        path="/",
+                        file_path=root_file,
+                        route_type=file_type,
+                        children=[],
+                        route_segment="",
+                        is_dynamic=False
+                    )
+                    routes.append(node)
+        
+        return routes
     
-    def _extract_statements_ast(self, content: str) -> Tuple[List[str], List[str], str]:
-        """Extract statements using esprima AST parsing with JSX support"""
-        try:
-            # Try parsing with JSX support first
-            ast = esprima.parseModule(content, options={
-                'loc': True, 
-                'range': True,
-                'jsx': True,
-                'tolerant': True
-            })
+    def _process_route_directory(self, directory: Path, parent_path: str) -> Optional[RouteNode]:
+        """Process a single route directory"""
+        dir_name = directory.name
+        
+        # Handle dynamic routes
+        is_dynamic = False
+        is_catch_all = False
+        segment = dir_name
+        
+        if re.match(CATCH_ALL_ROUTE_PATTERN, dir_name):
+            is_catch_all = True
+            is_dynamic = True
+            segment = re.sub(CATCH_ALL_ROUTE_PATTERN, r"\1", dir_name)
+        elif re.match(DYNAMIC_ROUTE_PATTERN, dir_name):
+            is_dynamic = True
+            segment = re.sub(DYNAMIC_ROUTE_PATTERN, r"\1", dir_name)
+        
+        current_path = f"{parent_path}/{dir_name}" if parent_path else f"/{dir_name}"
+        
+        # Find route files in this directory
+        route_files = {}
+        for file_type, file_names in [
+            ("layout", LAYOUT_FILES),
+            ("page", PAGE_FILES),
+            ("loading", LOADING_FILES),
+            ("head", HEAD_FILES),
+            ("route", ROUTE_FILES)
+        ]:
+            for file_name in file_names:
+                file_path = directory / file_name
+                if file_path.exists():
+                    route_files[file_type] = file_path
+                    break
+        
+        # Process child directories
+        children = []
+        for child_dir in sorted(directory.iterdir()):
+            if child_dir.is_dir():
+                child_node = self._process_route_directory(child_dir, current_path)
+                if child_node:
+                    children.append(child_node)
+        
+        # Create nodes for each file type found
+        nodes = []
+        for file_type, file_path in route_files.items():
+            node = RouteNode(
+                path=current_path,
+                file_path=file_path,
+                route_type=file_type,
+                children=children,
+                route_segment=segment,
+                is_dynamic=is_dynamic,
+                is_catch_all=is_catch_all
+            )
+            nodes.append(node)
+        
+        # If we have children but no files, create a container node
+        if children and not route_files:
+            node = RouteNode(
+                path=current_path,
+                file_path=None,
+                route_type="directory",
+                children=children,
+                route_segment=segment,
+                is_dynamic=is_dynamic,
+                is_catch_all=is_catch_all
+            )
+            nodes.append(node)
+        
+        return nodes[0] if nodes else None
+    
+    def _tree_to_entries(self, tree: List[RouteNode]) -> List[RouteEntry]:
+        """Convert route tree to flat list of entries"""
+        entries = []
+        
+        # Group nodes by path to combine layout/page/etc for same route
+        path_groups = defaultdict(list)
+        
+        def collect_nodes(nodes, parent_layouts=None):
+            if parent_layouts is None:
+                parent_layouts = []
             
-            imports = []
-            exports = []
-            
-            lines = content.split('\n')
-            processed_ranges = set()
-            
-            for node in ast.body:
-                start_line = node.loc.start.line - 1  # esprima uses 1-based line numbers
-                end_line = node.loc.end.line - 1
+            for node in nodes:
+                if node.file_path:
+                    path_groups[node.path].append(node)
                 
-                # Extract the original source for this node
-                if node.type == 'ImportDeclaration':
-                    import_lines = lines[start_line:end_line + 1]
-                    imports.append('\n'.join(import_lines).strip())
-                    processed_ranges.update(range(start_line, end_line + 1))
-                elif node.type == 'ExportNamedDeclaration' or node.type == 'ExportDefaultDeclaration':
-                    export_lines = lines[start_line:end_line + 1]
-                    exports.append('\n'.join(export_lines).strip())
-                    processed_ranges.update(range(start_line, end_line + 1))
-            
-            # Collect remaining lines that weren't imports or exports
-            remaining_lines = []
-            for i, line in enumerate(lines):
-                if i not in processed_ranges:
-                    remaining_lines.append(line)
-            
-            return imports, exports, '\n'.join(remaining_lines)
-            
-        except Exception as e:
-            logger.warning(f"AST parsing failed, falling back to regex: {e}")
-            return self._extract_statements_fallback(content)
-    
-    def _extract_statements_fallback(self, content: str) -> Tuple[List[str], List[str], str]:
-        """Fallback method using improved pattern matching for TypeScript/JSX"""
-        lines = content.split('\n')
-        imports = []
-        exports = []
-        main_lines = []
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            stripped = line.strip()
-            
-            # Handle imports
-            if stripped.startswith('import ') and not line.startswith(' ') and not line.startswith('\t'):
-                imports.append(stripped)
-            # Handle export function declarations (multi-line)
-            elif (stripped.startswith('export default function') or stripped.startswith('export async function') or stripped.startswith('export function')) and not line.startswith(' ') and not line.startswith('\t'):
-                # Collect the entire function declaration
-                function_lines = [line]
-                brace_count = line.count('{') - line.count('}')
-                i += 1
+                # If this is a layout, add it to parent layouts for children
+                child_layouts = parent_layouts.copy()
+                if node.route_type == "layout" and node.file_path:
+                    child_layouts.append(node.file_path)
                 
-                # Continue collecting lines until we close all braces
-                while i < len(lines) and brace_count > 0:
-                    function_lines.append(lines[i])
-                    brace_count += lines[i].count('{') - lines[i].count('}')
-                    i += 1
+                collect_nodes(node.children, child_layouts)
+        
+        collect_nodes(tree)
+        
+        # Convert groups to entries
+        for path, nodes in path_groups.items():
+            # Find layout chain by walking up the directory tree
+            layout_chain = self._find_layout_chain(path)
+            
+            # Extract files by type
+            page_file = None
+            loading_file = None
+            head_file = None
+            route_file = None
+            
+            for node in nodes:
+                if node.route_type == "page":
+                    page_file = node.file_path
+                elif node.route_type == "loading":
+                    loading_file = node.file_path
+                elif node.route_type == "head":
+                    head_file = node.file_path
+                elif node.route_type == "route":
+                    route_file = node.file_path
+            
+            # Only create entry if there's a page or route file
+            if page_file or route_file:
+                all_files = set()
+                if page_file:
+                    all_files.add(page_file)
+                if loading_file:
+                    all_files.add(loading_file)
+                if head_file:
+                    all_files.add(head_file)
+                if route_file:
+                    all_files.add(route_file)
+                all_files.update(layout_chain)
                 
-                exports.append('\n'.join(function_lines))
-                continue  # Skip the normal increment since we already advanced i
-            # Handle other export statements
-            elif stripped.startswith('export ') and not line.startswith(' ') and not line.startswith('\t'):
-                exports.append(stripped)
-            else:
-                main_lines.append(line)
-            
-            i += 1
+                entry = RouteEntry(
+                    route_path=path,
+                    layout_chain=layout_chain,
+                    page_file=page_file,
+                    loading_file=loading_file,
+                    head_file=head_file,
+                    route_file=route_file,
+                    all_files=all_files
+                )
+                entries.append(entry)
         
-        return imports, exports, '\n'.join(main_lines)
+        return entries
     
-    def _is_complete_import(self, line: str) -> bool:
-        """Check if import statement is complete"""
-        return (line.endswith(';') or line.endswith('"') or line.endswith("'")) and 'from' in line
-    
-    def _find_local_dependencies(self, imports: List[str], current_file: Path) -> List[str]:
-        """Find local file dependencies from import statements"""
-        local_deps = []
-        
-        for import_stmt in imports:
-            import_path = self._extract_import_path(import_stmt)
-            if import_path:
-                resolved_path = self.resolve_file_path(import_path, current_file)
-                if resolved_path and resolved_path.exists():
-                    local_deps.append(str(resolved_path))
-        
-        return local_deps
-    
-    def _extract_import_path(self, import_stmt: str) -> Optional[str]:
-        """Extract the path from an import statement"""
-        patterns = [
-            r'from\s+["\']([^"\']+)["\']',
-            r'import\s+["\']([^"\']+)["\']'
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, import_stmt)
-            if match:
-                return match.group(1)
-        
-        return None
-    
-    def build_dependency_order(self, entry_files: List[str]) -> List[str]:
-        """Build topological order of dependencies"""
-        visited = set()
-        visiting = set()
-        result = []
-        
-        def visit(file_path: str):
-            if file_path in visiting:
-                logger.warning(f"Circular dependency detected involving {file_path}")
-                return
-            
-            if file_path in visited:
-                return
-            
-            visiting.add(file_path)
-            
-            if file_path in self.dependency_graph:
-                for dep in self.dependency_graph[file_path]:
-                    visit(dep)
-            
-            visiting.remove(file_path)
-            visited.add(file_path)
-            result.append(file_path)
-        
-        for entry_file in entry_files:
-            file_info = self.parse_file(Path(entry_file))
-            for dep in file_info['local_deps']:
-                visit(dep)
-        
-        for entry_file in entry_files:
-            visit(entry_file)
-        
-        return result
-    
-    def _create_layout_composition(self, layouts: List[str], page_file: Optional[str]) -> str:
-        """Create proper layout composition with page as children"""
-        if not layouts and not page_file:
-            return ""
-        
-        composition_parts = []
-        
-        # Import all components
-        component_imports = []
-        component_map = {}
-        
-        # Process layouts
-        for i, layout_file in enumerate(layouts):
-            layout_info = self.parse_file(Path(layout_file))
-            component_name = layout_info['component_info']['component_name']
-            if not component_name:
-                component_name = f"Layout{i}"
-            
-            # Clean up component content - remove export statements
-            clean_content = self._clean_component_content(layout_info['content'])
-            composition_parts.append(f"// Layout from {Path(layout_file).relative_to(self.project_root)}")
-            composition_parts.append(clean_content)
-            component_map[f"layout_{i}"] = component_name
-        
-        # Process page
-        page_component_name = None
-        if page_file:
-            page_info = self.parse_file(Path(page_file))
-            page_component_name = page_info['component_info']['component_name']
-            if not page_component_name:
-                page_component_name = "Page"
-            
-            clean_content = self._clean_component_content(page_info['content'])
-            composition_parts.append(f"// Page from {Path(page_file).relative_to(self.project_root)}")
-            composition_parts.append(clean_content)
-            component_map['page'] = page_component_name
-        
-        # Create the composed component
-        if layouts:
-            composition_parts.append("\n// Composed App Component")
-            composition_parts.append("function App() {")
-            
-            # Build nested layout structure
-            nested_jsx = page_component_name if page_component_name else "null"
-            
-            # Wrap from innermost to outermost layout
-            for i in reversed(range(len(layouts))):
-                layout_name = component_map[f"layout_{i}"]
-                nested_jsx = f"React.createElement({layout_name}, null, {nested_jsx})"
-            
-            composition_parts.append(f"  return {nested_jsx};")
-            composition_parts.append("}")
-            composition_parts.append("")
-            composition_parts.append("export default App;")
-        elif page_component_name:
-            composition_parts.append(f"\nexport default {page_component_name};")
-        
-        return '\n'.join(composition_parts)
-    
-    def create_single_file_for_swc(self, files: List[str], temp_dir: Path) -> Path:
-        """Create a single bundled file for SWC compilation with import deduplication"""
-        bundled_content = self.bundle_files(files)
-        bundled_content = self._apply_react_transforms(bundled_content)
-        
-        temp_file = temp_dir / "bundled_components.tsx"
-        temp_file.write_text(bundled_content, encoding='utf-8')
-        
-        logger.info(f"Created bundled file: {temp_file}")
-        logger.debug(f"Bundled content preview:\n{bundled_content[:500]}...")
-        
-        return temp_file
-    
-    def _apply_react_transforms(self, content: str) -> str:
-        """Apply React-specific transformations"""
-        react_hooks = [
-            'useState', 'useEffect', 'useContext', 'useReducer', 
-            'useCallback', 'useMemo', 'useRef', 'useLayoutEffect',
-            'useImperativeHandle', 'useDebugValue'
-        ]
-        
-        react_components = ['Fragment', 'Component', 'PureComponent']
-        react_functions = ['createElement', 'createContext', 'forwardRef', 'memo', 'lazy']
-        
-        all_react_items = react_hooks + react_components + react_functions
-        
-        for item in all_react_items:
-            pattern = rf'\b(?<!React\.){item}\b(?=\s*[\(\.])'
-            replacement = f'React.{item}'
-            content = re.sub(pattern, replacement, content)
-        
-        return content
-
-    def _clean_component_content(self, content: str) -> str:
-        """Remove export statements and imports from component content"""
-        lines = content.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            stripped = line.strip()
-            # Skip import statements (they're handled at the bundle level)
-            if stripped.startswith('import '):
-                continue
-            # Convert export default function to regular function
-            elif stripped.startswith('export default function'):
-                cleaned_lines.append(line.replace('export default ', ''))
-            # Skip standalone export default lines (like "export default ComponentName;")
-            elif stripped.startswith('export default') and (stripped.endswith(';') or len(stripped.split()) == 3):
-                continue
-            # Convert other exports to regular declarations
-            elif stripped.startswith('export '):
-                cleaned_lines.append(line.replace('export ', ''))
-            else:
-                cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
-    
-    def bundle_files(self, files: List[str]) -> str:
-        """Bundle files with proper layout composition and import deduplication"""
-        # Reset deduplicator for new bundling operation
-        self.deduplicator.reset()
-        
-        # Separate layouts from pages
+    def _find_layout_chain(self, route_path: str) -> List[Path]:
+        """Find layout chain for a route path"""
         layouts = []
+        
+        # Start from root and walk down the path
+        current_path = self.app_dir
+        layouts_found = []
+        
+        # Check root layout
+        for layout_name in LAYOUT_FILES:
+            root_layout = current_path / layout_name
+            if root_layout.exists():
+                layouts_found.append(root_layout)
+                break
+        
+        # Walk down the route segments
+        if route_path != "/":
+            segments = [s for s in route_path.split("/") if s]
+            
+            for segment in segments:
+                current_path = current_path / segment
+                
+                # Look for layout in this directory
+                for layout_name in LAYOUT_FILES:
+                    layout_file = current_path / layout_name
+                    if layout_file.exists():
+                        layouts_found.append(layout_file)
+                        break
+        
+        return layouts_found
+    
+    def create_entry_bundle_files_for_route(self, route_entry: RouteEntry) -> List[Path]:
+        """
+        Get list of source files needed to build a route bundle
+        
+        Args:
+            route_entry: Route entry to get files for
+            
+        Returns:
+            List of file paths needed for the bundle
+        """
+        files = list(route_entry.all_files)
+        
+        # Add shared utilities and dependencies
+        shared_dirs = ["components", "lib", "utils", "hooks"]
+        for dir_name in shared_dirs:
+            shared_dir = self.project_root / dir_name
+            if shared_dir.exists():
+                files.extend(self._find_importable_files(shared_dir))
+        
+        # Remove duplicates and sort
+        unique_files = sorted(set(files))
+        
+        return unique_files
+    
+    def _find_importable_files(self, directory: Path) -> List[Path]:
+        """Find all importable files in a directory"""
+        files = []
+        
+        for item in directory.rglob("*"):
+            if item.is_file() and item.suffix in SUPPORTED_EXTENSIONS:
+                files.append(item)
+        
+        return files
+    
+    def create_single_file_for_swc(self, files: List[Path], temp_dir: Path) -> Path:
+        """
+        Create a single bundled TSX file from multiple source files
+        
+        Args:
+            files: List of source files to bundle
+            temp_dir: Temporary directory to write bundled file
+            
+        Returns:
+            Path to the bundled file
+        """
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        bundled_file = temp_dir / "bundled.tsx"
+        
+        # Separate layout files from page files and other components
+        layout_files = []
         page_file = None
         other_files = []
         
         for file_path in files:
-            file_info = self.parse_file(Path(file_path))
-            if file_info['component_info']['is_layout']:
-                layouts.append(file_path)
-            elif file_info['component_info']['is_page']:
+            file_name = file_path.name
+            if file_name in LAYOUT_FILES:
+                layout_files.append(file_path)
+            elif file_name in PAGE_FILES:
                 page_file = file_path
             else:
                 other_files.append(file_path)
         
-        # Sort layouts by depth (root layout first)
-        layouts.sort(key=lambda x: len(Path(x).relative_to(self.app_dir).parts))
-        
-        # Process all files for import deduplication
-        all_files = other_files + layouts + ([page_file] if page_file else [])
-        
-        # Extract imports from all files
-        for file_path in all_files:
-            current_file = Path(file_path)
-            try:
-                content = current_file.read_text(encoding='utf-8')
-                self.deduplicator.add_imports_from_content(content, current_file)
-            except Exception as e:
-                logger.error(f"Error processing file {file_path}: {e}")
-                continue
-        
-        output_parts = []
-        
-        # Add deduplicated imports
-        deduplicated_imports = self.deduplicator.generate_deduplicated_imports()
-        if deduplicated_imports:
-            output_parts.extend(deduplicated_imports)
-            output_parts.append('')
-        
-        # Handle other dependencies first
-        if other_files:
-            ordered_others = self.build_dependency_order(other_files)
-            for file_path in ordered_others:
-                file_info = self.parse_file(Path(file_path))
-                if file_info['content'].strip():
-                    relative_path = Path(file_path).relative_to(self.project_root)
-                    clean_content = self.deduplicator.remove_imports_from_content(file_info['content'])
-                    clean_content = self._clean_component_content(clean_content)
-                    output_parts.append(f"// File: {relative_path}")
-                    output_parts.append(clean_content)
-                    output_parts.append("")
-        
-        # Create layout composition (with imports already removed by deduplicator)
-        composition = self._create_layout_composition_clean(layouts, page_file)
-        if composition:
-            output_parts.append(composition)
-        
-        return '\n'.join(output_parts)
-    
-    def _create_layout_composition_clean(self, layouts: List[str], page_file: Optional[str]) -> str:
-        """Create layout composition with clean content (imports already handled)"""
-        if not layouts and not page_file:
-            return ""
-        
-        composition_parts = []
-        component_map = {}
-        
-        # Process layouts
-        for i, layout_file in enumerate(layouts):
-            layout_info = self.parse_file(Path(layout_file))
-            component_name = layout_info['component_info']['component_name']
-            if not component_name:
-                component_name = f"Layout{i}"
-            
-            # Get clean content without imports
-            clean_content = self.deduplicator.remove_imports_from_content(layout_info['content'])
-            clean_content = self._clean_component_content(clean_content)
-            
-            composition_parts.append(f"// Layout from {Path(layout_file).relative_to(self.project_root)}")
-            composition_parts.append(clean_content)
-            component_map[f"layout_{i}"] = component_name
-        
-        # Process page
-        page_component_name = None
+        # Use LayoutComposer for layout and page composition
         if page_file:
-            page_info = self.parse_file(Path(page_file))
-            page_component_name = page_info['component_info']['component_name']
-            if not page_component_name:
-                page_component_name = "Page"
+            from .layouts import LayoutComposer
+            composer = LayoutComposer()
             
-            clean_content = self.deduplicator.remove_imports_from_content(page_info['content'])
-            clean_content = self._clean_component_content(clean_content)
+            # Sort layout files by depth (outermost to innermost)
+            layout_files.sort(key=lambda f: len(f.parts))
             
-            composition_parts.append(f"// Page from {Path(page_file).relative_to(self.project_root)}")
-            composition_parts.append(clean_content)
-            component_map['page'] = page_component_name
+            try:
+                composed_content = composer.compose_layouts(layout_files, page_file)
+            except Exception as e:
+                logger.error(f"Failed to compose layouts: {e}")
+                # Fallback to simple composition
+                composed_content = self._fallback_composition(layout_files, page_file, other_files)
+        else:
+            # No page file, use fallback
+            composed_content = self._fallback_composition(layout_files, None, other_files)
         
-        # Create the composed component
-        if layouts:
-            composition_parts.append("\n// Composed App Component")
-            composition_parts.append("function App() {")
+        # Add other component imports with resolved paths
+        if other_files:
+            additional_imports = []
+            for file_path in other_files:
+                # Resolve import path relative to project root
+                try:
+                    rel_path = file_path.relative_to(self.project_root)
+                    import_path = str(rel_path).replace('\\', '/').replace('.tsx', '').replace('.ts', '').replace('.jsx', '').replace('.js', '')
+                    
+                    # Add import for the component
+                    component_name = file_path.stem.replace('-', '').replace('_', '')
+                    additional_imports.append(f'// Import from {import_path}')
+                    
+                except ValueError:
+                    logger.warning(f"Could not resolve relative path for {file_path}")
             
-            # Build nested layout structure
-            nested_jsx = page_component_name if page_component_name else "null"
+            if additional_imports:
+                composed_content = '\n'.join(additional_imports) + '\n\n' + composed_content
+        
+        # Write bundled file
+        bundled_file.write_text(composed_content, encoding="utf-8")
+        
+        logger.info(f"Created bundled file: {bundled_file}")
+        return bundled_file
+    
+    def _fallback_composition(self, layout_files: List[Path], page_file: Optional[Path], other_files: List[Path]) -> str:
+        """Fallback composition when LayoutComposer fails"""
+        lines = ['import React from "react";', '']
+        
+        # Add simple component
+        if page_file:
+            try:
+                page_content = read_file(page_file)
+                # Extract just the component function if possible
+                if 'export default' in page_content:
+                    lines.append('// Fallback page component')
+                    lines.append(page_content.replace('export default', 'const PageComponent ='))
+                    lines.append('')
+                    lines.append('export default PageComponent;')
+                else:
+                    lines.append('export default function FallbackPage() { return <div>Page content</div>; }')
+            except Exception as e:
+                logger.error(f"Fallback composition failed: {e}")
+                lines.append('export default function ErrorPage() { return <div>Error loading page</div>; }')
+        else:
+            lines.append('export default function EmptyPage() { return <div>No page found</div>; }')
+        
+        return '\n'.join(lines)
+    
+    def _process_file_content(self, content: str, file_path: Path) -> Dict:
+        """Process individual file content for bundling"""
+        lines = content.split("\n")
+        imports = set()
+        exports = []
+        code_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
             
-            # Wrap from innermost to outermost layout
-            for i in reversed(range(len(layouts))):
-                layout_name = component_map[f"layout_{i}"]
-                nested_jsx = f"{layout_name}({nested_jsx})"
-            
-            composition_parts.append(f"return {nested_jsx}")
-            composition_parts.append("}")
+            if stripped.startswith("import "):
+                # Resolve import paths
+                resolved_import = self._resolve_import_path(stripped, file_path)
+                imports.add(resolved_import)
+            elif stripped.startswith("export "):
+                exports.append(line)
+            else:
+                code_lines.append(line)
+        
+        return {
+            "imports": imports,
+            "exports": exports,
+            "code": "\n".join(code_lines)
+        }
+    
+    def _resolve_import_path(self, import_line: str, current_file: Path) -> str:
+        """Resolve import path aliases"""
+        # Extract the import path
+        import_match = re.search(r'from\s+["\']([^"\']+)["\']', import_line)
+        if not import_match:
+            return import_line
+        
+        import_path = import_match.group(1)
+        
+        # Check for aliases
+        for alias, real_path in self._import_aliases.items():
+            if import_path.startswith(alias):
+                resolved_path = import_path.replace(alias, real_path, 1)
+                return import_line.replace(import_path, resolved_path)
+        
+        # Handle relative imports
+        if import_path.startswith("."):
+            current_dir = current_file.parent
+            resolved_path = (current_dir / import_path).resolve()
+            rel_path = resolved_path.relative_to(self.project_root)
+            return import_line.replace(import_path, str(rel_path))
+        
+        return import_line
+    
+    def invalidate_cache(self) -> None:
+        """Invalidate the route cache"""
+        self._route_cache = None
+        logger.info("Route cache invalidated")

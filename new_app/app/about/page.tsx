@@ -50,7 +50,7 @@ export default function HomePage({ initialData }: HomePageProps) {
       <section className="hero">
         <div className="hero-content">
           <h1 className="hero-title">
-            Welcome to <span className="brand">Tavo</span>
+            About Tavo
           </h1>
           <p className="hero-subtitle">
             Full-stack framework combining Python backends with Rust/SWC-powered React SSR from Cyberwizdev Team
@@ -309,22 +309,3 @@ export async function getServerSideProps() {
     }
   };
 }
-
-// Client-side hydration helper
-export function hydrateHomePage() {
-  // This would be called after the page is hydrated on the client
-  console.log('🚀 Home page hydrated');
-  
-  // Add any client-side initialization here
-  if (typeof window !== 'undefined') {
-    // Client-side only code
-    console.log('Client-side JavaScript loaded');
-  }
-}
-
-/*
-Unit tests as comments:
-1. test_layout_renders_correctly() - verify layout renders with proper HTML structure
-2. test_api_data_fetching() - test API data fetching and error handling
-3. test_responsive_design() - verify layout works on different screen sizes
-*/

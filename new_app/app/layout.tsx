@@ -12,24 +12,11 @@ interface LayoutProps {
 
 export default function RootLayout({ children }: LayoutProps) {
   return (
-    <html lang="en">
-      <head>
-        {/* Favicon */}
-        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-
-        {/* Preload critical resources */}
-        <link
-          rel="preload"
-          href="/fonts/inter.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
-
-        {/* Global styles */}
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `
+    <>
+      {/* Global styles */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
             * {
               box-sizing: border-box;
               margin: 0;
@@ -49,50 +36,43 @@ export default function RootLayout({ children }: LayoutProps) {
               flex-direction: column;
             }
           `,
-          }}
-        />
-      </head>
+        }}
+      />
+      {/* Navigation */}
+      <nav className="navbar">
+        <div className="nav-container">
+          <a href="/" className="nav-brand">
+            Tavo
+          </a>
 
-      <body>
-        <div id="root">
-          {/* Navigation */}
-          <nav className="navbar">
-            <div className="nav-container">
-              <a href="/" className="nav-brand">
-                Tavo
-              </a>
-
-              <div className="nav-links">
-                <a href="/" className="nav-link">
-                  Home
-                </a>
-                <a href="/about" className="nav-link">
-                  About
-                </a>
-                <a href="/api/hello" className="nav-link">
-                  API
-                </a>
-              </div>
-            </div>
-          </nav>
-
-          {/* Main content */}
-          <main className="main-content">{children}</main>
-
-          {/* Footer */}
-          <footer className="footer">
-            <div className="footer-container">
-              <p>
-                &copy; 2025 Tavo Framework. Built with Python + Rust + React.
-              </p>
-            </div>
-          </footer>
+          <div className="nav-links">
+            <a href="/" className="nav-link">
+              Home
+            </a>
+            <a href="/about" className="nav-link">
+              About
+            </a>
+            <a href="/api/hello" className="nav-link">
+              API
+            </a>
+          </div>
         </div>
+      </nav>
 
-        {/* Navigation styles */}
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `
+      {/* Main content */}
+      <main className="main-content">{children}</main>
+
+      {/* Footer */}
+      <footer className="footer">
+        <div className="footer-container">
+          <p>&copy; 2025 Tavo Framework. Built with Python + Rust + React.</p>
+        </div>
+      </footer>
+
+      {/* Navigation styles */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
             .navbar {
               background: #fff;
               border-bottom: 1px solid #e5e7eb;
@@ -171,10 +151,9 @@ export default function RootLayout({ children }: LayoutProps) {
               }
             }
           `,
-          }}
-        />
-      </body>
-    </html>
+        }}
+      />
+    </>
   );
 }
 

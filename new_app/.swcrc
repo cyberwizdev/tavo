@@ -4,6 +4,10 @@
       "syntax": "typescript",
       "tsx": true
     },
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "transform": {
       "react": {
         "runtime": "automatic"

@@ -28,7 +28,6 @@
     "react",
     "python",
     "ssr",
-    "fastapi",
     "rust",
     "swc"
   ],

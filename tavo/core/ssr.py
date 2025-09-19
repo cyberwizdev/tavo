@@ -1,10 +1,9 @@
-
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
+import subprocess # Added for npm install in example
 
-from tavo.core.bundler import AppRouter
-
+from tavo.core.bundler import get_bundler, Bundler # Import Bundler class
 
 class SSRError(Exception):
     """Exception raised when SSR rendering fails."""
@@ -13,25 +12,19 @@ class SSRError(Exception):
 
 class SSRRenderer:
     """
-    Server-Side Rendering engine that uses the AppRouter to build and compile
-    React components for hydration.
+    Server-Side Rendering engine that uses the Tavo bundler's DevServer
+    to build and compile React components for hydration and SSR.
     """
 
-    def __init__(self, app_dir: Optional[Path] = None):
+    def __init__(self, project_root: Optional[Path] = None):
         """
         Initialize SSR renderer.
 
         Args:
-            app_dir: Directory containing the React app components (defaults to cwd/app).
+            project_root: Path to the project root directory. Defaults to current working directory.
         """
-        if app_dir:
-            # If app_dir is provided, the project root is its parent
-            project_root = app_dir.parent
-        else:
-            # Default to current working directory as project root
-            project_root = Path.cwd()
-        
-        self.router = AppRouter(project_root=project_root)
+        self.project_root = Path(project_root).resolve() if project_root else Path.cwd().resolve()
+        self.bundler: Bundler = get_bundler(project_root=self.project_root)
 
     async def render_route(
         self,
@@ -41,18 +34,15 @@ class SSRRenderer:
         """
         Render a route and return complete HTML with inline JavaScript bundle.
         This method is async to avoid blocking the event loop, as the underlying
-        compilation process can be slow.
+        compilation and SSR execution process can be slow.
         """
         try:
             loop = asyncio.get_running_loop()
-            # Run the synchronous `render_route` in a thread pool executor
-            html, status_code = await loop.run_in_executor(
-                None, self.router.render_route, route
+            # Run the synchronous `dev_server.render_route` in a thread pool executor
+            # The dev_server.render_route is now synchronous in its call to subprocess.run
+            html = await loop.run_in_executor(
+                None, self.bundler.dev_server.render_route, route, context
             )
-
-            if status_code != 200:
-                raise SSRError(f"Router returned status {status_code} for route '{route}': {html}")
-
             return html
         except Exception as e:
             raise SSRError(f"Failed to render route '{route}': {e}") from e
@@ -72,29 +62,29 @@ class SSRRenderer:
 async def render_route(
     route: str,
     context: Optional[Dict[str, Any]] = None,
-    app_dir: Optional[Path] = None
+    project_root: Optional[Path] = None
 ) -> str:
     """
     Convenience function to render a route with inline bundle.
     """
-    renderer = SSRRenderer(app_dir)
+    renderer = SSRRenderer(project_root)
     return await renderer.render_route(route, context)
 
 
 def render_route_sync(
     route: str,
     context: Optional[Dict[str, Any]] = None,
-    app_dir: Optional[Path] = None
+    project_root: Optional[Path] = None
 ) -> str:
     """Synchronous convenience function."""
-    renderer = SSRRenderer(app_dir)
+    renderer = SSRRenderer(project_root)
     return renderer.render_route_sync(route, context)
 
 
 if __name__ == "__main__":
     # Example usage
     async def main():
-        print("Testing SSRRenderer with AppRouter...")
+        print("Testing SSRRenderer with Tavo Bundler...")
         # Create a dummy project for testing in a temporary directory
         import tempfile
         import shutil
@@ -107,19 +97,33 @@ if __name__ == "__main__":
         app_dir.mkdir(parents=True, exist_ok=True)
 
         (app_dir / "layout.tsx").write_text(
-            'export default function RootLayout({ children }) { return <html><head><title>Test</title></head><body><div id="root">{children}</div></body></html>; }'
+            'import React from "react"; export default function RootLayout({ children }) { return <html><head><title>Test</title></head><body><div id="root">{children}</div></body></html>; }'
         )
         (app_dir / "page.tsx").write_text(
-            'export default function Page() { return <h1>Hello from Tavo SSR!</h1>; }'
+            'import React from "react"; export default function Page() { return <h1>Hello from Tavo SSR!</h1>; }'
         )
+        # Ensure react and react-dom are installed for Node.js SSR execution
         (project_dir / "package.json").write_text(
             '{ "dependencies": { "react": "latest", "react-dom": "latest" } }'
         )
+        # Run npm install to ensure dependencies are available for Node.js SSR
         print(f"Created dummy project at: {project_dir}")
-        print("NOTE: This test runs 'node' and may require 'npm install' in the temp directory if dependencies are missing.")
+        print("Running npm install in dummy project...")
+        try:
+            subprocess.run(["npm", "install"], cwd=project_dir, check=True, capture_output=True)
+            print("npm install completed.")
+        except subprocess.CalledProcessError as e:
+            print(f"npm install failed: {e.stderr.decode()}")
+            print("Please ensure Node.js and npm are installed and in your PATH.")
+            return
+        except FileNotFoundError:
+            print("npm command not found. Please ensure Node.js and npm are installed and in your PATH.")
+            return
+
+        print("NOTE: This test requires 'node' and 'npm' to be installed and in your PATH.")
 
         try:
-            html = await render_route("/", app_dir=project_dir)
+            html = await render_route("/", project_root=project_dir)
             print("\n✅ Successfully rendered route '/'")
             print(f"   HTML length: {len(html)} characters")
             print("-" * 20)
@@ -129,5 +133,10 @@ if __name__ == "__main__":
             print(f"❌ SSR Error: {e}")
         except Exception as e:
             print(f"❌ An unexpected error occurred: {e}")
+        finally:
+            if project_dir.exists():
+                shutil.rmtree(project_dir)
+                print(f"Cleaned up dummy project at: {project_dir}")
 
     asyncio.run(main())
+
