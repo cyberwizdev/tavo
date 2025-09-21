@@ -355,6 +355,127 @@ class SWCCompiler:
         
         return result
 
+    def _compile_with_swc_dual(self, files: List[Path]) -> Tuple[str, str, str]:
+        """
+        Compile with SWC for both SSR and Hydration.
+        Returns (ssr_js, hydration_js, bundled_content)
+        """
+        swc_command = self.installer.get_swc_command()
+        if not swc_command:
+            raise RuntimeError("SWC command not available")
+
+        temp_dir = self.debug_dir / "current_compilation"
+        safe_mkdir(temp_dir)
+
+        # Create bundled file
+        bundled_file = self.resolver.create_single_file_for_swc(files, temp_dir)
+        bundled_content = read_file(bundled_file)
+        bundled_content = self.strip_js_comments(bundled_content)
+        write_file_atomic(bundled_file, bundled_content)
+
+        # ---- Compile SSR (commonjs) ----
+        ssr_config = self.get_swc_config("ssr")
+        ssr_config_file = temp_dir / ".swcrc.ssr"
+        write_file_atomic(ssr_config_file, json.dumps(ssr_config, indent=2))
+        ssr_out_file = temp_dir / "compiled.ssr.js"
+
+        ssr_cmd = [
+            swc_command,
+            str(bundled_file),
+            "-o", str(ssr_out_file),
+            "--config-file", str(ssr_config_file)
+        ]
+
+        # ---- Compile Hydration (esm + bundle) ----
+        hydration_config = self.get_swc_config("hydration")
+        hydration_config_file = temp_dir / ".swcrc.hydration"
+        write_file_atomic(hydration_config_file, json.dumps(hydration_config, indent=2))
+        hydration_out_file = temp_dir / "compiled.hydration.js"
+
+        hydration_cmd = [
+            swc_command,
+            str(bundled_file),
+            "-o", str(hydration_out_file),
+            "--config-file", str(hydration_config_file),
+            "--bundle"
+        ]
+
+        env = os.environ.copy()
+        timeout = int(os.getenv('TAVO_SWC_TIMEOUT', DEFAULT_SWC_TIMEOUT))
+
+        try:
+            # Run SSR
+            subprocess.run(
+                ssr_cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=self.project_root,
+                env=env,
+                timeout=timeout
+            )
+            if not ssr_out_file.exists():
+                raise RuntimeError("SWC SSR compilation failed")
+
+            ssr_js = read_file(ssr_out_file)
+            ssr_js = self.clean_compiled_output(ssr_js)
+            ssr_js = self._optimize_for_ssr(ssr_js)
+
+            # Run Hydration
+            subprocess.run(
+                hydration_cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=self.project_root,
+                env=env,
+                timeout=timeout
+            )
+            if not hydration_out_file.exists():
+                raise RuntimeError("SWC Hydration compilation failed")
+
+            hydration_js = read_file(hydration_out_file)
+            hydration_js = self.clean_compiled_output(hydration_js)
+            hydration_js = self._optimize_for_client(hydration_js)
+
+            return ssr_js, hydration_js, bundled_content
+
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"SWC failed (code {e.returncode})\n"
+                f"Command: {' '.join(e.cmd)}\n"
+                f"Stdout: {e.stdout}\nStderr: {e.stderr}"
+            )
+
+    def compile_for_ssr_and_hydration(self, files: List[Path], path: str) -> Dict[str, CompilationResult]:
+        """
+        Compile files for both SSR and Hydration.
+        Returns dict: {"ssr": CompilationResult, "hydration": CompilationResult}
+        """
+        start_time = time.time()
+        ssr_js, hydration_js, bundled_tsx = self._compile_with_swc_dual(files)
+
+        duration = time.time() - start_time
+        base_info = dict(
+            bundled_tsx_path=None,
+            source_files=files,
+            cache_hit=False,
+            compilation_time=duration,
+        )
+
+        return {
+            "ssr": CompilationResult(
+                compiled_js=ssr_js,
+                output_size=len(ssr_js.encode("utf-8")),
+                **base_info # type: ignore
+            ),
+            "hydration": CompilationResult(
+                compiled_js=hydration_js,
+                output_size=len(hydration_js.encode("utf-8")),
+                **base_info # type: ignore
+            )
+        }
+
     def _compile_with_swc(self, files: List[Path], compilation_type: str = "default") -> Tuple[str, str]:
         """Perform the actual SWC compilation"""
         swc_command = self.installer.get_swc_command()
@@ -363,7 +484,6 @@ class SWCCompiler:
 
         # Create temporary compilation directory
         temp_dir = self.debug_dir / "current_compilation"
-        output_dir = temp_dir / "out"
         safe_mkdir(temp_dir)
 
         # Create bundled file

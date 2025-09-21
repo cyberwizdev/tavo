@@ -1,0 +1,21 @@
+{
+  "name": "myssr-example",
+  "version": "1.0.0",
+  "description": "Example React app for MySSR compiler",
+  "main": "src/App.tsx",
+  "scripts": {
+    "build:ssr": "../target/release/myssr --entry src/App.tsx --ssr --out dist/index.html",
+    "build:hydrate": "../target/release/myssr --entry src/App.tsx --hydrate --out dist/client.js",
+    "build:full": "../target/release/myssr --entry src/App.tsx --ssr --hydrate --out dist/index.html",
+    "serve": "python -m http.server 8000 --directory dist"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}

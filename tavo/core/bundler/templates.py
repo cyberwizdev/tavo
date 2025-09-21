@@ -59,7 +59,7 @@ class TemplateManager:
         window.__INITIAL_PROPS__ = ''' + INITIAL_STATE_PLACEHOLDER + ''';
         window.__TAVO_ENV__ = "development";
     </script>
-    <script src="''' + CLIENT_BUNDLE_PLACEHOLDER + '''" defer></script>
+    <script> ''' + CLIENT_BUNDLE_PLACEHOLDER + '''</script>
     ''' + HMR_SCRIPT_PLACEHOLDER + '''
 </body>
 </html>'''
@@ -149,7 +149,7 @@ class TemplateManager:
 </body>
 </html>'''
     
-    def render_html(self, ssr_html: str, state: Dict[str, Any], client_script_path: str) -> str:
+    def render_html(self, ssr_html: str, state: Dict[str, Any], hydration_compiled_js: str) -> str:
         """
         Render complete HTML page
         
@@ -166,7 +166,7 @@ class TemplateManager:
         # Replace placeholders
         html = template.replace(SSR_HTML_PLACEHOLDER, ssr_html)
         html = html.replace(INITIAL_STATE_PLACEHOLDER, json.dumps(state))
-        html = html.replace(CLIENT_BUNDLE_PLACEHOLDER, client_script_path)
+        html = html.replace(CLIENT_BUNDLE_PLACEHOLDER, hydration_compiled_js)
         html = html.replace(HMR_SCRIPT_PLACEHOLDER, "")  # Will be filled by inject_hmr_script if needed
         
         return html

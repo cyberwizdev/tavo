@@ -1,0 +1,32 @@
+[package]
+name = "myssr"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "myssr"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+
+# SWC dependencies - Using stable, compatible versions
+swc_core = { version = "0.90", features = [
+    "ecma_ast",
+    "ecma_parser", 
+    "ecma_visit",
+    "ecma_codegen",
+    "ecma_transforms"
+] }
+
+# JavaScript runtime - Stable version
+boa_engine = "0.18"
+boa_runtime = "0.18"
+
+# File system and path handling
+walkdir = "2.5"
+path-absolutize = "3.1"
+
+thiserror = "1.0.69"

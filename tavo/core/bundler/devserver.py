@@ -258,74 +258,65 @@ class DevServer:
         return affected
     
     def render_route(self, path: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """Render a route with SSR"""
+        """Render a route with SSR and attach hydration script"""
         try:
             routes = self.resolver.resolve_routes()
-            
+
             # Find matching route
             matching_route = None
             for route_entry in routes:
                 if route_entry.route_path == path or (path == "/" and route_entry.route_path == "/"):
                     matching_route = route_entry
                     break
-            
+
             if not matching_route:
                 return self.render_error_page(f"Route not found: {path}")
-            
-            # Compile route for SSR if needed
+
+            # Compile route for both SSR + Hydration
             route_files = list(matching_route.all_files)
-            logger.info(f"Compiling {matching_route.route_path} for SSR")
-            result = self.compiler.compile_for_ssr(route_files, matching_route.route_path)
-            ssr_compiled_js = result.compiled_js
+            logger.info(f"Compiling {matching_route.route_path} for SSR + Hydration")
+            outputs = self.compiler.compile_for_ssr_and_hydration(route_files, matching_route.route_path)
+
+            ssr_compiled_js = outputs["ssr"].compiled_js
+            hydration_compiled_js = outputs["hydration"].compiled_js
 
             # Prepare for SSR execution
             ssr_html_content = ""
-            
-            # Serialize context to JSON string to pass to Node.js
             serialized_context = json.dumps(context) if context else "{}"
 
-            # Ensure debug directory exists for temporary files
             safe_mkdir(self.compiler.debug_dir)
-
-            # Write the compiled SSR JS to a temporary file
-            # Use a more robust filename to avoid conflicts
             safe_filename = path.replace('/', '_').strip('_') or 'index'
+
+            # Write SSR JS into temp file
             ssr_temp_file = self.compiler.debug_dir / f"ssr_entry__{safe_filename}.cjs"
             write_file_atomic(ssr_temp_file, ssr_compiled_js)
-
-            # --- FIX STARTS HERE ---
-            # Convert the Path object to a valid file:// URI.
-            # .as_uri() correctly handles path separators and the required triple slash for Windows.
-            # e.g., 'file:///C:/Users/user/project/.tavo/debug/ssr_entry__index.js'
             ssr_temp_file_uri = ssr_temp_file.as_uri()
-            # --- FIX ENDS HERE ---
 
-            # Create a small Node.js script to execute the SSR component
+            # Node executor for SSR
             ssr_executor_script = f"""
-import React from 'react';
-import ReactDOMServer from 'react-dom/server';
-import * as Component from '{ssr_temp_file_uri}';
+    import React from 'react';
+    import ReactDOMServer from 'react-dom/server';
+    import * as Component from '{ssr_temp_file_uri}';
 
-const initialProps = JSON.parse(process.argv[2] || '{{}}');
+    const initialProps = JSON.parse(process.argv[2] || '{{}}');
 
-try {{
-    const element = React.createElement(Component.default, initialProps);
-    const html = ReactDOMServer.renderToString(element);
-    console.log(html);
-}} catch (e) {{
-    // Log the full error to stderr for better debugging
-    console.error(JSON.stringify({{ message: e.message, stack: e.stack }}));
-    process.exit(1);
-}}
-"""
+    try {{
+        const element = React.createElement(Component.default, initialProps);
+        const html = ReactDOMServer.renderToString(element);
+        console.log(html);
+    }} catch (e) {{
+        console.error(JSON.stringify({{ message: e.message, stack: e.stack }}));
+        process.exit(1);
+    }}
+    """
             ssr_executor_temp_file = self.compiler.debug_dir / "ssr_executor.mjs"
             write_file_atomic(ssr_executor_temp_file, ssr_executor_script)
 
-            # Execute the SSR component using Node.js
+            # Run Node SSR
             try:
                 node_command = ["node", str(ssr_executor_temp_file), serialized_context]
                 logger.debug(f"Executing Node.js SSR: {' '.join(node_command)}")
-                
+
                 ssr_process = subprocess.run(
                     node_command,
                     capture_output=True,
@@ -342,7 +333,7 @@ try {{
 
             except subprocess.CalledProcessError as e:
                 logger.error(f"Node.js SSR execution failed (code {e.returncode}): {e.stderr.strip()}")
-                ssr_html_content = f""
+                ssr_html_content = ""
             except subprocess.TimeoutExpired:
                 logger.error("Node.js SSR execution timed out.")
                 ssr_html_content = ""
@@ -351,32 +342,22 @@ try {{
                 ssr_html_content = ""
             except Exception as e:
                 logger.error(f"Unexpected error during Node.js SSR execution: {e}")
-                ssr_html_content = f""
-            finally:
-                # Clean up temporary files
-                # if ssr_temp_file.exists():
-                #     ssr_temp_file.unlink()
-                # if ssr_executor_temp_file.exists():
-                #     ssr_executor_temp_file.unlink()
-                pass
+                ssr_html_content = ""
 
-            client_script_path = f"/dist/client/{safe_filename}.js"
-            
+            # Render HTML with template engine
             html = self.templates.render_html(
                 ssr_html=ssr_html_content,
                 state=context if context else {},
-                client_script_path=client_script_path
+                hydration_compiled_js=hydration_compiled_js
             )
-            
-            # Inject HMR script in development
+
+            # Inject HMR in dev
             html = self.templates.inject_hmr_script(html)
-            
             return html
-            
+
         except Exception as e:
-            logger.exception(f"Error serving route {path}: {e}") # Use logger.exception for full traceback
+            logger.exception(f"Error serving route {path}: {e}")
             return self.render_error_page(str(e))
-        
 
     def render_error_page(self, error_message: str) -> str:
         """Render error page"""
